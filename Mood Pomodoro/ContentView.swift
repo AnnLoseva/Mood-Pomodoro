@@ -4,31 +4,19 @@
 //
 
 import SwiftUI
+import SwiftData
 
 /// Root view. Adapts between a phone tab bar and an iPad sidebar based on
 /// horizontal size class — one codebase, no separate iPhone/iPad targets.
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(CloudSyncStatus.self) private var cloudSync
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let banner = cloudSync.bannerText {
-                Text(banner)
-                    .font(.lora(12))
-                    .foregroundStyle(AppTheme.inkSoft)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(AppTheme.parchmentCard.opacity(0.92))
-            }
-            Group {
-                if horizontalSizeClass == .regular {
-                    iPadRootView()
-                } else {
-                    iPhoneRootView()
-                }
+        Group {
+            if horizontalSizeClass == .regular {
+                iPadRootView()
+            } else {
+                iPhoneRootView()
             }
         }
         .tint(AppTheme.forest)
@@ -39,7 +27,9 @@ private struct iPhoneRootView: View {
     var body: some View {
         TabView {
             HomeView()
-                .tabItem { Label("Сегодня", systemImage: "leaf.fill") }
+                .tabItem { Label("Сейчас", systemImage: "leaf.fill") }
+            DiaryView()
+                .tabItem { Label("Дневник", systemImage: "text.book.closed.fill") }
             HistoryView()
                 .tabItem { Label("История", systemImage: "book.closed.fill") }
             AnalyticsView()
@@ -52,12 +42,13 @@ private struct iPhoneRootView: View {
 
 private struct iPadRootView: View {
     enum SidebarSection: String, Identifiable, CaseIterable {
-        case today, history, analytics
+        case today, diary, history, analytics
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .today: return "Сегодня"
+            case .today: return "Сейчас"
+            case .diary: return "Дневник"
             case .history: return "История"
             case .analytics: return "Аналитика"
             }
@@ -66,6 +57,7 @@ private struct iPadRootView: View {
         var icon: String {
             switch self {
             case .today: return "leaf.fill"
+            case .diary: return "text.book.closed.fill"
             case .history: return "book.closed.fill"
             case .analytics: return "chart.line.uptrend.xyaxis"
             }
@@ -96,6 +88,7 @@ private struct iPadRootView: View {
         } detail: {
             switch selection ?? .today {
             case .today: DashboardView()
+            case .diary: DiaryView()
             case .history: HistoryView()
             case .analytics: AnalyticsView()
             }
@@ -104,8 +97,10 @@ private struct iPadRootView: View {
 }
 
 #Preview {
-    ContentView()
-        .environment(SessionManager(container: PersistenceController.makeContainer()))
+    let container = PersistenceController.makeContainer()
+    return ContentView()
+        .environment(SessionManager(container: container))
         .environment(ReasonsStore.shared)
-        .environment(CloudSyncStatus())
+        .environment(CycleStore(container: container))
+        .modelContainer(container)
 }

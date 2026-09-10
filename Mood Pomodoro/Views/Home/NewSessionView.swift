@@ -11,6 +11,7 @@ struct NewSessionView: View {
     @State private var intervalMinutes: Int = 10
     @State private var selectedConditions: [FactorCategory: FactorOption] = [:]
     @State private var showConditionsPicker = false
+    @State private var showQuickCheckIn = false
     @FocusState private var activityFieldFocused: Bool
 
     #if DEBUG
@@ -97,6 +98,18 @@ struct NewSessionView: View {
                 .buttonStyle(.goblinPrimary)
                 .disabled(trimmedActivity.isEmpty)
                 .opacity(trimmedActivity.isEmpty ? 0.5 : 1)
+
+                // Recording a mood shouldn't require committing to a session.
+                VStack(spacing: 6) {
+                    Button("Как я сейчас?") {
+                        activityFieldFocused = false
+                        showQuickCheckIn = true
+                    }
+                    .buttonStyle(.goblinSecondary)
+                    Text("Можно просто отметить состояние — без сессии.")
+                        .font(.lora(12))
+                        .foregroundStyle(AppTheme.inkSoft)
+                }
             }
             .parchmentCard(padding: 24)
             .padding(.horizontal, 24)
@@ -105,6 +118,9 @@ struct NewSessionView: View {
         .scrollContentBackground(.hidden)
         .sheet(isPresented: $showConditionsPicker) {
             ConditionsPickerSheet(selection: $selectedConditions)
+        }
+        .sheet(isPresented: $showQuickCheckIn) {
+            QuickCheckInSheet(sessionID: nil)
         }
     }
 

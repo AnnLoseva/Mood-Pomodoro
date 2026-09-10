@@ -20,7 +20,8 @@ enum PersistenceController {
         FactorOption.self,
         ConditionEvent.self,
         SessionSegment.self,
-        MoodReason.self
+        MoodReason.self,
+        CycleEntry.self
     ])
 
     /// True when this process actually opened a CloudKit-backed store.

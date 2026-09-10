@@ -21,8 +21,14 @@ enum AnalyticsService {
 
     // MARK: - Overview
 
-    static func overview(sessions: [FocusSession]) -> OverviewStatistics {
-        let checkIns = sessions.flatMap { $0.checkIns ?? [] }
+    /// - Parameter standaloneCheckIns: moods logged outside any session. They
+    ///   count toward the mood figures — the user answered them the same way —
+    ///   but not toward session counts or durations, which they have none of.
+    static func overview(
+        sessions: [FocusSession],
+        standaloneCheckIns: [CheckIn] = []
+    ) -> OverviewStatistics {
+        let checkIns = sessions.flatMap { $0.checkIns ?? [] } + standaloneCheckIns
         let finished = sessions.filter { $0.state == .completed }
         return OverviewStatistics(
             averageMood: averageMood(of: checkIns),
@@ -196,8 +202,13 @@ enum AnalyticsService {
 
     // MARK: - Reasons
 
-    static func reasonStatistics(mood: Mood, sessions: [FocusSession]) -> [ReasonStatistic] {
-        let reasons = sessions.flatMap { $0.checkIns ?? [] }.filter { $0.mood == mood }.compactMap(\.reason)
+    static func reasonStatistics(
+        mood: Mood,
+        sessions: [FocusSession],
+        standaloneCheckIns: [CheckIn] = []
+    ) -> [ReasonStatistic] {
+        let all = sessions.flatMap { $0.checkIns ?? [] } + standaloneCheckIns
+        let reasons = all.filter { $0.mood == mood }.compactMap(\.reason)
         guard !reasons.isEmpty else { return [] }
         let counts = Dictionary(grouping: reasons, by: { $0 }).mapValues(\.count)
         let total = reasons.count

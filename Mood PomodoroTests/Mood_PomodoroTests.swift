@@ -28,6 +28,7 @@ struct Mood_PomodoroTests {
             ConditionEvent.self,
             SessionSegment.self,
             MoodReason.self,
+            CycleEntry.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         )
     }
@@ -526,6 +527,37 @@ struct Mood_PomodoroTests {
 
         let averageTimeToDifficult = AnalyticsService.averageTimeToFirstDifficultMood(sessions: scenario.sessions)
         #expect(averageTimeToDifficult != nil)
+    }
+
+    // MARK: - Moods logged outside a session
+
+    @Test @MainActor func standaloneCheckInIsSavedWithNoSessionAttached() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+
+        manager.addStandaloneCheckIn(mood: .tired, reason: "Устала", note: "После долгого дня")
+
+        let stored = try! container.mainContext.fetch(FetchDescriptor<CheckIn>())
+        #expect(stored.count == 1)
+        #expect(stored.first?.session == nil)
+        #expect(stored.first?.mood == .tired)
+        #expect(stored.first?.origin == .manual)
+        #expect(stored.first?.note == "После долгого дня")
+        // No session means no conditions to snapshot — the record is honest
+        // about that rather than inventing an empty-looking context.
+        #expect(stored.first?.conditionSnapshot.isEmpty == true)
+    }
+
+    @Test @MainActor func standaloneCheckInDoesNotDisturbAnActiveSession() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+        manager.startSession(activity: "Математика", intervalMinutes: 10)
+        let sessionID = manager.activeSession?.id
+
+        manager.addStandaloneCheckIn(mood: .good)
+
+        #expect(manager.activeSession?.id == sessionID)
+        #expect((manager.activeSession?.checkIns ?? []).isEmpty)
     }
 
     @Test func factorStatisticsFlagInsufficientSampleWhenAnActivityFilterShrinksAGroupBelowMinimum() {

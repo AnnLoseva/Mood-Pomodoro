@@ -5,9 +5,11 @@
 
 import SwiftUI
 
-/// Two-step manual check-in: pick a mood, then (optionally) a reason.
-/// Presented both from the "Как я сейчас?" button and from tapping a
-/// delivered notification's body.
+/// Two-step manual check-in: pick a mood, then (optionally) a reason and a
+/// note. Presented from the "Как я сейчас?" buttons (in a session, from the
+/// idle screen, or from the diary) and from tapping a delivered
+/// notification's body. When no session is running the check-in is saved
+/// standalone — logging a mood never requires starting one.
 struct QuickCheckInSheet: View {
     @Environment(SessionManager.self) private var sessionManager
     @Environment(\.dismiss) private var dismiss
@@ -33,8 +35,8 @@ struct QuickCheckInSheet: View {
 
                 VStack(spacing: 24) {
                     if let mood = selectedMood {
-                        ReasonPickerView(mood: mood) { reason in
-                            save(mood: mood, reason: reason)
+                        ReasonPickerView(mood: mood) { reason, note in
+                            save(mood: mood, reason: reason, note: note)
                         }
                     } else {
                         MoodPickerView { mood in
@@ -70,12 +72,20 @@ struct QuickCheckInSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    private func save(mood: Mood, reason: String?) {
+    private func save(mood: Mood, reason: String?, note: String?) {
         if let existingCheckInID {
             sessionManager.updateReason(reason, for: existingCheckInID)
+            dismiss()
+            return
+        }
+        let session = sessionID.flatMap { sessionManager.session(withID: $0) } ?? sessionManager.activeSession
+        // A running session takes the check-in so it keeps its conditions
+        // snapshot and check-in scheduling; otherwise the mood is recorded on
+        // its own — the same `CheckIn` type either way.
+        if let session, session.state == .active {
+            sessionManager.addCheckIn(mood: mood, reason: reason, note: note, to: session)
         } else {
-            let session = sessionID.flatMap { sessionManager.session(withID: $0) } ?? sessionManager.activeSession
-            sessionManager.addCheckIn(mood: mood, reason: reason, to: session)
+            sessionManager.addStandaloneCheckIn(mood: mood, reason: reason, note: note)
         }
         dismiss()
     }
@@ -116,39 +126,66 @@ private struct MoodPickerView: View {
 private struct ReasonPickerView: View {
     @Environment(ReasonsStore.self) private var reasonsStore
     let mood: Mood
-    let onSelect: (String?) -> Void
+    let onSelect: (String?, String?) -> Void
+
+    @State private var note: String = ""
+
+    private var trimmedNote: String? {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            MoodImage(mood: mood, size: 64)
-            VStack(spacing: 10) {
-                ForEach(reasonsStore.reasons(for: mood), id: \.self) { reason in
-                    Button {
-                        onSelect(reason)
-                    } label: {
-                        Text(reason)
-                            .font(.lora(16))
-                            .foregroundStyle(AppTheme.ink)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(AppTheme.parchment.opacity(0.55))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(AppTheme.border, lineWidth: 1.25)
-                            )
+        ScrollView {
+            VStack(spacing: 16) {
+                MoodImage(mood: mood, size: 64)
+                VStack(spacing: 10) {
+                    ForEach(reasonsStore.reasons(for: mood), id: \.self) { reason in
+                        Button {
+                            onSelect(reason, trimmedNote)
+                        } label: {
+                            Text(reason)
+                                .font(.lora(16))
+                                .foregroundStyle(AppTheme.ink)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(AppTheme.parchment.opacity(0.55))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(AppTheme.border, lineWidth: 1.25)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+
+                // Optional — a place for the sentence a stock reason doesn't
+                // cover. Never required to save a check-in.
+                TextField("Заметка (необязательно)", text: $note)
+                    .font(.lora(14))
+                    .foregroundStyle(AppTheme.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(AppTheme.parchment.opacity(0.55))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(AppTheme.border, lineWidth: 1.25)
+                    )
+
+                Button("Пропустить") {
+                    onSelect(nil, trimmedNote)
+                }
+                .font(.lora(14))
+                .foregroundStyle(AppTheme.inkSoft)
+                .padding(.top, 4)
             }
-            Button("Пропустить") {
-                onSelect(nil)
-            }
-            .font(.lora(14))
-            .foregroundStyle(AppTheme.inkSoft)
-            .padding(.top, 4)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 }

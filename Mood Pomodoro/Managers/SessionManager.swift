@@ -306,6 +306,32 @@ final class SessionManager {
         }
     }
 
+    /// Records a mood with no session behind it — the "Как я сейчас?" the
+    /// user reaches for outside a work session. It is the same `CheckIn`
+    /// entity the scheduled ones use (so one record type feeds history, the
+    /// diary and every analytic), just with `session == nil` and therefore no
+    /// condition snapshot: with no session there are no `ConditionEvent`s to
+    /// reconstruct "what was true" from.
+    @discardableResult
+    func addStandaloneCheckIn(
+        mood: Mood,
+        reason: String? = nil,
+        note: String? = nil,
+        at timestamp: Date = .now
+    ) -> CheckIn {
+        let checkIn = CheckIn(
+            timestamp: timestamp,
+            mood: mood,
+            reason: reason,
+            note: note,
+            origin: .manual
+        )
+        context.insert(checkIn)
+        try? context.save()
+        revision += 1
+        return checkIn
+    }
+
     /// Fills in the reason on a check-in that was created mood-only from a
     /// notification action, e.g. when the user opens the app from the
     /// "Почему так?" follow-up instead of answering it from the lock screen.

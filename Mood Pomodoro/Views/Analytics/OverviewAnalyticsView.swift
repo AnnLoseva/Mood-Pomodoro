@@ -9,11 +9,16 @@ import Charts
 
 struct OverviewAnalyticsView: View {
     @Query private var sessions: [FocusSession]
+    @Query private var allCheckIns: [CheckIn]
     @Query(sort: \FactorCategory.sortOrder) private var categories: [FactorCategory]
 
     @State private var selectedReasonMood: Mood = .veryGood
 
-    private var overview: OverviewStatistics { AnalyticsService.overview(sessions: sessions) }
+    private var standaloneCheckIns: [CheckIn] { allCheckIns.filter { $0.session == nil } }
+
+    private var overview: OverviewStatistics {
+        AnalyticsService.overview(sessions: sessions, standaloneCheckIns: standaloneCheckIns)
+    }
     private var trajectory: [MoodTimelinePoint] { AnalyticsService.moodTrajectory(sessions: sessions) }
     private var insights: [FactorInsight] { AnalyticsService.topPositiveFactors(categories: categories, sessions: sessions) }
 
@@ -156,7 +161,11 @@ struct OverviewAnalyticsView: View {
     }
 
     private var reasonsCard: some View {
-        let reasons = AnalyticsService.reasonStatistics(mood: selectedReasonMood, sessions: sessions)
+        let reasons = AnalyticsService.reasonStatistics(
+            mood: selectedReasonMood,
+            sessions: sessions,
+            standaloneCheckIns: standaloneCheckIns
+        )
         return VStack(alignment: .leading, spacing: 12) {
             Text("Частые причины")
                 .font(.lora(16, weight: .semibold))

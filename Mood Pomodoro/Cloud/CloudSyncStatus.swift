@@ -27,17 +27,6 @@ final class CloudSyncStatus {
 
     var kind: Kind = .checking
 
-    var bannerText: String? {
-        switch kind {
-        case .checking, .available:
-            return nil
-        case .signedOut:
-            return "Чтобы синхронизировать историю между iPhone и iPad, войди в iCloud в Настройках."
-        case .localOnly:
-            return "Синхронизация iPhone ↔ iPad через iCloud пока недоступна (нужен Apple Developer Program с CloudKit). Сессии работают на этом устройстве."
-        }
-    }
-
     func refresh(usingCloudKitStore: Bool) async {
         guard usingCloudKitStore else {
             kind = .localOnly

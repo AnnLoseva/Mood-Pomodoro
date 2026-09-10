@@ -29,10 +29,10 @@ enum PersistenceController {
     /// True when this process actually opened a CloudKit-backed store.
     private(set) static var isUsingCloudKit = false
 
-    /// Personal Team builds are not entitled for iCloud/CloudKit. Set this
-    /// to `true` only after attaching `Mood Pomodoro.entitlements` in
-    /// Signing & Capabilities on a paid Apple Developer team.
-    static let cloudKitEnabledInThisBuild = false
+    /// Requires the paid team (K36SNFAJDS) and `Mood Pomodoro.entitlements`
+    /// attached to the app target (`CODE_SIGN_ENTITLEMENTS`). Flip back to
+    /// `false` only for a Personal Team build, which can't sign iCloud.
+    static let cloudKitEnabledInThisBuild = true
 
     static func makeContainer() -> ModelContainer {
         let runningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil

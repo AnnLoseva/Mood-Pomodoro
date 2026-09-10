@@ -60,9 +60,14 @@ enum FactorSeeder {
     }
 
     /// Two devices can both seed before CloudKit's first import. Collapse
-    /// duplicate category names, keeping the oldest (first inserted) copy.
+    /// duplicate category names. The survivor must be the *same* copy on
+    /// every device — the two seeded copies share a `sortOrder`, so ties are
+    /// broken by `id`. Otherwise each device could delete the other's copy
+    /// and, once both deletions sync, the category would vanish entirely.
     static func dedupeCategories(in context: ModelContext) {
-        let all = (try? context.fetch(FetchDescriptor<FactorCategory>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
+        let all = ((try? context.fetch(FetchDescriptor<FactorCategory>())) ?? []).sorted {
+            ($0.sortOrder, $0.id.uuidString) < ($1.sortOrder, $1.id.uuidString)
+        }
         var seen: [String: FactorCategory] = [:]
         var removed = false
         for category in all {

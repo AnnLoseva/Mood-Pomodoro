@@ -414,12 +414,21 @@ final class SessionManager {
         try? context.save()
     }
 
+    /// A CloudKit import can bring in the other device's copy of the seeded
+    /// defaults (both devices seed before their first sync). Collapse those
+    /// right away rather than waiting for the next launch, then re-read.
+    private func handleRemoteChange() {
+        FactorSeeder.dedupeCategories(in: context)
+        ReasonsStore.shared.reloadFromSwiftData()
+        refresh()
+    }
+
     private func observeRemoteChanges() {
         let center = NotificationCenter.default
         remoteChangeObservers.append(
             center.addObserver(forName: .NSPersistentStoreRemoteChange, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    self?.refresh()
+                    self?.handleRemoteChange()
                 }
             }
         )
@@ -430,7 +439,7 @@ final class SessionManager {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in
-                    self?.refresh()
+                    self?.handleRemoteChange()
                 }
             }
         )

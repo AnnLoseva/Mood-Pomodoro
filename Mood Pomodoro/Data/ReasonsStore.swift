@@ -54,6 +54,7 @@ final class ReasonsStore {
 
     func reloadFromSwiftData() {
         guard let context else { return }
+        dedupeRows(in: context)
         let descriptor = FetchDescriptor<MoodReason>(sortBy: [SortDescriptor(\.sortOrder)])
         guard let rows = try? context.fetch(descriptor), !rows.isEmpty else { return }
         var map: [Mood: [String]] = [:]
@@ -65,6 +66,25 @@ final class ReasonsStore {
             map[mood] = mood.defaultReasons
         }
         reasons = map
+    }
+
+    /// Both devices seed the default reasons before their first sync, so an
+    /// import can double every row. Keep one row per (mood, text); the
+    /// survivor is chosen by `id` so every device keeps the same one and
+    /// the deletions never cancel each other out.
+    private func dedupeRows(in context: ModelContext) {
+        let rows = ((try? context.fetch(FetchDescriptor<MoodReason>())) ?? []).sorted {
+            $0.id.uuidString < $1.id.uuidString
+        }
+        var seen: Set<String> = []
+        var removed = false
+        for row in rows {
+            if !seen.insert("\(row.moodRaw)|\(row.text)").inserted {
+                context.delete(row)
+                removed = true
+            }
+        }
+        if removed { try? context.save() }
     }
 
     private func seedSwiftDataIfNeeded() {

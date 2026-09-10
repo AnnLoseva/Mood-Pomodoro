@@ -33,6 +33,28 @@ struct Mood_PomodoroTests {
         )
     }
 
+    /// Two devices seed the same category before their first sync. Each
+    /// must keep the *same* copy — if they kept different ones, each
+    /// device's deletion would remove the other's survivor once synced.
+    @Test func duplicateSeededCategoriesKeepTheSameCopyWhateverTheOrder() throws {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "FFFFFFFF-0000-0000-0000-000000000002")!
+
+        for insertionOrder in [[firstID, secondID], [secondID, firstID]] {
+            let container = try makeTestContainer()
+            let context = ModelContext(container)
+            for id in insertionOrder {
+                context.insert(FactorCategory(id: id, name: "Музыка", icon: "🎧", sortOrder: 0))
+            }
+            try context.save()
+
+            FactorSeeder.dedupeCategories(in: context)
+
+            let remaining = try context.fetch(FetchDescriptor<FactorCategory>())
+            #expect(remaining.map(\.id) == [firstID])
+        }
+    }
+
     /// Appends a segment to `session` and keeps the two sides of the
     /// relationship in sync, mirroring what `SessionManager` does.
     private func appendSegment(_ type: SegmentType, start: Date, end: Date? = nil, to session: FocusSession) {

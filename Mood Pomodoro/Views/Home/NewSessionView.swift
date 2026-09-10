@@ -9,6 +9,8 @@ struct NewSessionView: View {
     @Environment(SessionManager.self) private var sessionManager
     @State private var activity: String = ""
     @State private var intervalMinutes: Int = 10
+    @State private var selectedConditions: [FactorCategory: FactorOption] = [:]
+    @State private var showConditionsPicker = false
     @FocusState private var activityFieldFocused: Bool
 
     private let intervalOptions = [5, 10, 15, 20, 30]
@@ -61,11 +63,23 @@ struct NewSessionView: View {
                             .foregroundStyle(AppTheme.inkSoft)
                         IntervalPicker(options: intervalOptions, selection: $intervalMinutes)
                     }
+
+                    ConditionsSummaryView(
+                        title: "Условия",
+                        chips: selectedConditions.map { ConditionChip(category: $0.key, option: $0.value) }
+                            .sorted { $0.name < $1.name },
+                        actionTitle: selectedConditions.isEmpty ? "+ Добавить условие" : "Изменить условия",
+                        onTap: { showConditionsPicker = true }
+                    )
                 }
 
                 Button {
                     activityFieldFocused = false
-                    sessionManager.startSession(activity: trimmedActivity, intervalMinutes: intervalMinutes)
+                    sessionManager.startSession(
+                        activity: trimmedActivity,
+                        intervalMinutes: intervalMinutes,
+                        initialConditions: selectedConditions
+                    )
                 } label: {
                     Text("Начать сессию")
                 }
@@ -78,6 +92,9 @@ struct NewSessionView: View {
             .padding(.vertical, 40)
         }
         .scrollContentBackground(.hidden)
+        .sheet(isPresented: $showConditionsPicker) {
+            ConditionsPickerSheet(selection: $selectedConditions)
+        }
     }
 
     private var trimmedActivity: String {

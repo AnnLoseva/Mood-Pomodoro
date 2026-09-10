@@ -39,6 +39,23 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// Numeric position on the 1–5 scale, veryBad=1 … veryGood=5. Used only to
+    /// average/compare moods in Analytics — never surfaced as a "score" to the
+    /// user (the UI always shows the emoji/label, not the number, except as
+    /// the small "3.8 / 5" summary figure the spec explicitly asks for).
+    var scale: Double {
+        switch self {
+        case .veryGood: return 5
+        case .good: return 4
+        case .neutral: return 3
+        case .tired: return 2
+        case .veryBad: return 1
+        }
+    }
+
+    /// True for the two lower states — used to find "time to first difficult moment".
+    var isDifficult: Bool { self == .tired || self == .veryBad }
+
     var label: String {
         switch self {
         case .veryGood: return "Очень хорошо"

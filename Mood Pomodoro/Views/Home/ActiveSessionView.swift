@@ -4,14 +4,18 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ActiveSessionView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @Query(sort: \FactorCategory.sortOrder) private var allCategories: [FactorCategory]
     let session: FocusSession
 
     @State private var showQuickCheckIn = false
     @State private var showFinishConfirm = false
     @State private var showCancelConfirm = false
+    @State private var showConditionsPicker = false
+    @State private var conditionsSelection: [FactorCategory: FactorOption] = [:]
 
     var body: some View {
         VStack {
@@ -40,6 +44,13 @@ struct ActiveSessionView: View {
                             }
                         }
                     }
+
+                    ConditionsSummaryView(
+                        title: "Условия",
+                        chips: session.activeConditions(asOf: context.date).map(\.asChip),
+                        actionTitle: "Изменить",
+                        onTap: { openConditionsPicker() }
+                    )
 
                     Button {
                         showQuickCheckIn = true
@@ -80,6 +91,11 @@ struct ActiveSessionView: View {
         .sheet(isPresented: $showQuickCheckIn) {
             QuickCheckInSheet(sessionID: session.id)
         }
+        .sheet(isPresented: $showConditionsPicker) {
+            ConditionsPickerSheet(selection: $conditionsSelection) {
+                sessionManager.updateConditions(conditionsSelection, for: session)
+            }
+        }
         .goblinConfirmation(
             isPresented: $showFinishConfirm,
             title: "Завершить сессию?",
@@ -94,6 +110,21 @@ struct ActiveSessionView: View {
             isDestructive: true,
             onConfirm: { sessionManager.cancel() }
         )
+    }
+
+    /// Seeds the picker's selection from the conditions active right now,
+    /// resolving each snapshot entry back to its live `FactorCategory`/
+    /// `FactorOption` (the snapshot only carries ids + names).
+    private func openConditionsPicker() {
+        let active = session.activeConditions(asOf: .now)
+        var resolved: [FactorCategory: FactorOption] = [:]
+        for entry in active {
+            guard let category = allCategories.first(where: { $0.id == entry.categoryID }),
+                  let option = category.options.first(where: { $0.id == entry.optionID }) else { continue }
+            resolved[category] = option
+        }
+        conditionsSelection = resolved
+        showConditionsPicker = true
     }
 
     private func formattedElapsed(_ interval: TimeInterval) -> String {

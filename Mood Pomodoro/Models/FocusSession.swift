@@ -23,6 +23,12 @@ final class FocusSession {
     @Relationship(deleteRule: .cascade, inverse: \CheckIn.session)
     var checkIns: [CheckIn] = []
 
+    /// Every condition change during this session, oldest first is not
+    /// guaranteed — sort by `timestamp` when order matters. See
+    /// `activeConditions(asOf:)` for reconstructing "what was true when".
+    @Relationship(deleteRule: .cascade, inverse: \ConditionEvent.session)
+    var conditionEvents: [ConditionEvent] = []
+
     init(
         id: UUID = UUID(),
         activity: String,
@@ -62,5 +68,23 @@ final class FocusSession {
 
     var sortedCheckIns: [CheckIn] {
         checkIns.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    var sortedConditionEvents: [ConditionEvent] {
+        conditionEvents.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Reconstructs which condition was active per category as of `date`:
+    /// for each category, the most recent event at or before that moment.
+    /// This is what makes a mid-session condition change ("switched to
+    /// pu-erh at 10:45") retroactively correct for check-ins before that
+    /// point — they simply never see the later event.
+    func activeConditions(asOf date: Date) -> [ConditionSnapshotEntry] {
+        let relevant = conditionEvents.filter { $0.timestamp <= date }
+        let latestPerCategory = Dictionary(grouping: relevant, by: \.categoryID)
+            .compactMapValues { events in events.max { $0.timestamp < $1.timestamp } }
+        return latestPerCategory.values
+            .map(\.asSnapshotEntry)
+            .sorted { $0.categoryName < $1.categoryName }
     }
 }

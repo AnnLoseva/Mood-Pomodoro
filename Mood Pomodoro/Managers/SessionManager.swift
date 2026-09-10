@@ -29,9 +29,21 @@ final class SessionManager {
         activeSession = try? context.fetch(descriptor).first
     }
 
-    func startSession(activity: String, intervalMinutes: Int) {
+    /// - Parameter initialConditions: the conditions picked on the New Session
+    ///   screen, keyed by category. Each becomes a `ConditionEvent` stamped at
+    ///   the session's start.
+    func startSession(
+        activity: String,
+        intervalMinutes: Int,
+        initialConditions: [FactorCategory: FactorOption] = [:]
+    ) {
         let session = FocusSession(activity: activity, checkInIntervalMinutes: intervalMinutes)
         context.insert(session)
+        for (category, option) in initialConditions {
+            let event = ConditionEvent(timestamp: session.startDate, category: category, option: option)
+            event.session = session
+            session.conditionEvents.append(event)
+        }
         try? context.save()
         activeSession = session
         Task {
@@ -41,6 +53,25 @@ final class SessionManager {
                 referenceStart: session.scheduleAnchor
             )
         }
+    }
+
+    /// Records changed conditions mid-session as new `ConditionEvent`s timestamped
+    /// `now`. Only categories whose selection actually differs from what's
+    /// currently active get a new event — picking the same value again is a
+    /// no-op, so re-opening and closing the editor doesn't spam the timeline.
+    /// Never touches existing check-ins or their stored snapshots.
+    func updateConditions(_ selection: [FactorCategory: FactorOption], for session: FocusSession? = nil) {
+        guard let target = session ?? activeSession else { return }
+        let now = Date.now
+        let currentlyActive = Dictionary(
+            uniqueKeysWithValues: target.activeConditions(asOf: now).map { ($0.categoryID, $0.optionID) }
+        )
+        for (category, option) in selection where currentlyActive[category.id] != option.id {
+            let event = ConditionEvent(timestamp: now, category: category, option: option)
+            event.session = target
+            target.conditionEvents.append(event)
+        }
+        try? context.save()
     }
 
     func pause() {
@@ -89,7 +120,14 @@ final class SessionManager {
 
     func addCheckIn(mood: Mood, reason: String?, note: String? = nil, to session: FocusSession? = nil) {
         guard let target = session ?? activeSession else { return }
-        let checkIn = CheckIn(mood: mood, reason: reason, note: note)
+        let timestamp = Date.now
+        let checkIn = CheckIn(
+            timestamp: timestamp,
+            mood: mood,
+            reason: reason,
+            note: note,
+            conditionSnapshot: target.activeConditions(asOf: timestamp)
+        )
         checkIn.session = target
         target.checkIns.append(checkIn)
         try? context.save()

@@ -5,110 +5,43 @@
 
 import SwiftUI
 import SwiftData
-import Charts
 
-/// Deliberately minimal for the MVP: mood distribution, top reasons, and a
-/// few summary numbers. Room to grow (fatigue-over-time, per-activity
-/// breakdowns) once there's enough data to make that useful.
+/// Four sections, per the spec: Обзор / Условия / Активности / Сравнить.
+/// Deliberately not a dashboard — each section is a short scroll, not a wall
+/// of charts.
 struct AnalyticsView: View {
-    @Query private var sessions: [FocusSession]
-
-    private var finishedSessions: [FocusSession] {
-        sessions.filter { !$0.isActive && $0.endDate != nil }
+    private enum Section: String, CaseIterable, Identifiable {
+        case overview = "Обзор"
+        case conditions = "Условия"
+        case activities = "Активности"
+        case compare = "Сравнить"
+        var id: String { rawValue }
     }
 
-    private var allCheckIns: [CheckIn] {
-        finishedSessions.flatMap(\.checkIns)
-    }
+    @Query private var allSessions: [FocusSession]
+    @State private var section: Section = .overview
+
+    private var finishedOrActive: [FocusSession] { allSessions }
+    private var hasAnyCheckIns: Bool { allSessions.contains { !$0.checkIns.isEmpty } }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 ForestBackdrop()
 
-                if allCheckIns.isEmpty {
-                    VStack(spacing: 10) {
-                        MoodImage(mood: .neutral, size: 72)
-                        Text("Пока мало данных")
-                            .font(.lora(19, weight: .semibold))
-                            .foregroundStyle(AppTheme.ink)
-                        Text("Аналитика появится после нескольких сессий")
-                            .font(.lora(14))
-                            .foregroundStyle(AppTheme.inkSoft)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(28)
-                    .parchmentCard()
-                    .padding(.horizontal, 32)
+                if !hasAnyCheckIns {
+                    emptyState
                 } else {
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Распределение состояния")
-                                    .font(.lora(16, weight: .semibold))
-                                    .foregroundStyle(AppTheme.ink)
-                                Chart(moodCounts, id: \.mood) { item in
-                                    BarMark(
-                                        x: .value("Настроение", item.mood.rawValue),
-                                        y: .value("Количество", item.count)
-                                    )
-                                    .foregroundStyle(AppTheme.forest)
-                                    .cornerRadius(6)
-                                }
-                                .chartXAxis {
-                                    AxisMarks { value in
-                                        if let raw = value.as(String.self), let mood = Mood(rawValue: raw) {
-                                            AxisValueLabel {
-                                                MoodImage(mood: mood, size: 22)
-                                            }
-                                        }
-                                    }
-                                }
-                                .chartYAxis {
-                                    AxisMarks { _ in
-                                        AxisGridLine().foregroundStyle(AppTheme.border)
-                                        AxisValueLabel().font(.lora(11)).foregroundStyle(AppTheme.inkSoft)
-                                    }
-                                }
-                                .frame(height: 180)
+                    VStack(spacing: 0) {
+                        sectionPicker
+                        Group {
+                            switch section {
+                            case .overview: OverviewAnalyticsView()
+                            case .conditions: FactorsAnalyticsView()
+                            case .activities: ActivitiesAnalyticsView()
+                            case .compare: CompareAnalyticsView()
                             }
-                            .padding(18)
-                            .parchmentCard()
-
-                            if !topReasons.isEmpty {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Частые причины")
-                                        .font(.lora(16, weight: .semibold))
-                                        .foregroundStyle(AppTheme.ink)
-                                    ForEach(topReasons, id: \.reason) { item in
-                                        HStack {
-                                            Text(item.reason)
-                                                .font(.lora(14))
-                                                .foregroundStyle(AppTheme.ink)
-                                            Spacer()
-                                            Text("\(item.count)")
-                                                .font(.lora(14, weight: .medium))
-                                                .foregroundStyle(AppTheme.inkSoft)
-                                        }
-                                    }
-                                }
-                                .padding(18)
-                                .parchmentCard()
-                            }
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Сводка")
-                                    .font(.lora(16, weight: .semibold))
-                                    .foregroundStyle(AppTheme.ink)
-                                summaryRow("Сессий завершено", "\(finishedSessions.count)")
-                                summaryRow("Средняя длительность", averageDurationText)
-                                summaryRow("Всего check-ins", "\(allCheckIns.count)")
-                            }
-                            .padding(18)
-                            .parchmentCard()
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
                     }
                 }
             }
@@ -123,37 +56,44 @@ struct AnalyticsView: View {
         }
     }
 
-    private func summaryRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.lora(14))
+    private var sectionPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Section.allCases) { item in
+                    let isSelected = item == section
+                    Button {
+                        section = item
+                    } label: {
+                        Text(item.rawValue)
+                            .font(.lora(13, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5)))
+                            .overlay(Capsule().stroke(AppTheme.border, lineWidth: isSelected ? 0 : 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            MoodImage(mood: .neutral, size: 72)
+            Text("Пока мало данных")
+                .font(.lora(19, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Spacer()
-            Text(value)
-                .font(.lora(14, weight: .medium))
+            Text("Аналитика появится после нескольких сессий")
+                .font(.lora(14))
                 .foregroundStyle(AppTheme.inkSoft)
+                .multilineTextAlignment(.center)
         }
-    }
-
-    private var moodCounts: [(mood: Mood, count: Int)] {
-        Mood.orderedCases.map { mood in
-            (mood, allCheckIns.filter { $0.mood == mood }.count)
-        }
-    }
-
-    private var topReasons: [(reason: String, count: Int)] {
-        let reasons = allCheckIns.compactMap(\.reason)
-        let counts = Dictionary(grouping: reasons, by: { $0 }).mapValues(\.count)
-        return counts.sorted { $0.value > $1.value }.prefix(5).map { ($0.key, $0.value) }
-    }
-
-    private var averageDurationText: String {
-        let durations = finishedSessions.compactMap { session -> TimeInterval? in
-            guard let end = session.endDate else { return nil }
-            return end.timeIntervalSince(session.startDate)
-        }
-        guard !durations.isEmpty else { return "-" }
-        let avg = durations.reduce(0, +) / Double(durations.count)
-        return "\(Int(avg) / 60) мин"
+        .padding(28)
+        .parchmentCard()
+        .padding(.horizontal, 32)
     }
 }

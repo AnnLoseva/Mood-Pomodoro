@@ -70,7 +70,8 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         let descriptor = FetchDescriptor<FocusSession>(predicate: #Predicate { $0.id == sessionID })
         guard let session = try? context.fetch(descriptor).first, session.isActive else { return }
 
-        let checkIn = CheckIn(mood: mood)
+        let timestamp = Date.now
+        let checkIn = CheckIn(timestamp: timestamp, mood: mood, conditionSnapshot: session.activeConditions(asOf: timestamp))
         checkIn.session = session
         session.checkIns.append(checkIn)
         try? context.save()

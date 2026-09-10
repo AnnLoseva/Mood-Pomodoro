@@ -7,7 +7,13 @@ import Foundation
 import SwiftData
 
 enum PersistenceController {
-    static let schema = Schema([FocusSession.self, CheckIn.self])
+    static let schema = Schema([
+        FocusSession.self,
+        CheckIn.self,
+        FactorCategory.self,
+        FactorOption.self,
+        ConditionEvent.self
+    ])
 
     /// CloudKit sync is intentionally off for the MVP (local storage only, per spec).
     /// The schema and configuration are isolated here so enabling `cloudKitDatabase`
@@ -15,7 +21,9 @@ enum PersistenceController {
     static func makeContainer() -> ModelContainer {
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
-            return try ModelContainer(for: schema, configurations: [configuration])
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            FactorSeeder.seedIfNeeded(context: ModelContext(container))
+            return container
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }

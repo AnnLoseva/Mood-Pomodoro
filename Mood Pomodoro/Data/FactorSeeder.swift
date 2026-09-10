@@ -15,13 +15,14 @@ enum FactorSeeder {
     static func seedIfNeeded(context: ModelContext) {
         let existing = (try? context.fetchCount(FetchDescriptor<FactorCategory>())) ?? 0
         if existing > 0 {
-            NSUbiquitousKeyValueStore.default.set(true, forKey: seededKey)
+            setSeededFlag()
             dedupeCategories(in: context)
             return
         }
-        // Another device already seeded and CloudKit will import — don't
-        // create a second copy of the default categories.
-        if NSUbiquitousKeyValueStore.default.bool(forKey: seededKey) {
+        // Another device already seeded — don't create a second copy of the
+        // default categories. iCloud KVS is only used when the binary is
+        // entitled; otherwise this is a local UserDefaults flag.
+        if seededFlag {
             return
         }
 
@@ -46,9 +47,16 @@ enum FactorSeeder {
             }
         }
         try? context.save()
-        NSUbiquitousKeyValueStore.default.set(true, forKey: seededKey)
-        NSUbiquitousKeyValueStore.default.synchronize()
+        setSeededFlag()
         dedupeCategories(in: context)
+    }
+
+    private static var seededFlag: Bool {
+        UserDefaults.standard.bool(forKey: seededKey)
+    }
+
+    private static func setSeededFlag() {
+        UserDefaults.standard.set(true, forKey: seededKey)
     }
 
     /// Two devices can both seed before CloudKit's first import. Collapse

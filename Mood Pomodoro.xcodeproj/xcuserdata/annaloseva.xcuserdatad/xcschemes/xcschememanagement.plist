@@ -7,12 +7,25 @@
 		<key>Mood Pomodoro.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>1</integer>
 		</dict>
 		<key>MoodPomodoroLiveActivity.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>0</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>88C608BD30529F5800B55E85</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>88C609A330529F5900B55E85</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>

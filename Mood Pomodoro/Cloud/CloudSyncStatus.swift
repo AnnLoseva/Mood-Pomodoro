@@ -39,7 +39,7 @@ final class CloudSyncStatus {
     }
 
     func refresh(usingCloudKitStore: Bool) async {
-        guard usingCloudKitStore else {
+        guard usingCloudKitStore, ProcessEntitlements.supportsCloudKit else {
             kind = .localOnly
             return
         }

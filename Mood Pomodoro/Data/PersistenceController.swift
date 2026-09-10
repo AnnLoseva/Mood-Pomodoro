@@ -28,7 +28,9 @@ enum PersistenceController {
 
     static func makeContainer() -> ModelContainer {
         let runningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-        if !runningTests, let cloud = attempt(cloudKit: true) {
+        // Do not construct a CloudKit container unless the binary is actually
+        // entitled — otherwise CKContainer logs a process-level client bug.
+        if !runningTests, ProcessEntitlements.supportsCloudKit, let cloud = attempt(cloudKit: true) {
             isUsingCloudKit = true
             return seeded(cloud)
         }

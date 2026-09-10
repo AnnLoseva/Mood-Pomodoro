@@ -7,7 +7,11 @@ import SwiftUI
 import Charts
 
 struct SessionDetailView: View {
+    @Environment(SessionManager.self) private var sessionManager
+    @Environment(\.dismiss) private var dismiss
     let session: FocusSession
+
+    @State private var showDeleteConfirm = false
 
     private var trajectory: [(minutes: Double, mood: Mood)] { AnalyticsService.sessionTrajectory(session) }
 
@@ -17,17 +21,14 @@ struct SessionDetailView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
+                    headerCard
+                    durationCard
+
                     if trajectory.count >= 2 {
                         trajectoryCard
                     }
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(session.timelineEntries) { entry in
-                            TimelineRow(entry: entry)
-                        }
-                    }
-                    .padding(20)
-                    .parchmentCard()
+                    timelineCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 24)
@@ -40,6 +41,79 @@ struct SessionDetailView: View {
                     .font(.lora(17, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .foregroundStyle(AppTheme.rustDeep)
+            }
+        }
+        .goblinConfirmation(
+            isPresented: $showDeleteConfirm,
+            title: "Удалить сессию?",
+            message: "Она исчезнет из истории и больше не попадёт в аналитику.",
+            confirmTitle: "Удалить",
+            isDestructive: true,
+            onConfirm: {
+                sessionManager.delete(session)
+                dismiss()
+            }
+        )
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(DateFormatting.fullDate(session.startDate))
+                .font(.lora(15, weight: .semibold))
+                .foregroundStyle(AppTheme.ink)
+            Text(DateFormatting.timeRange(from: session.startDate, to: session.endDate))
+                .font(.lora(14).monospacedDigit())
+                .foregroundStyle(AppTheme.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .parchmentCard()
+    }
+
+    private var timelineCard: some View {
+        let events = session.timelineEvents
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                if index > 0, !DateFormatting.isSameDay(events[index - 1].timestamp, event.timestamp) {
+                    Text(DateFormatting.fullDate(event.timestamp))
+                        .font(.lora(12, weight: .semibold))
+                        .foregroundStyle(AppTheme.inkSoft)
+                        .padding(.top, 6)
+                }
+                TimelineRow(event: event)
+            }
+        }
+        .padding(20)
+        .parchmentCard()
+    }
+
+    private var durationCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            durationRow(icon: "⏱", title: "Всего", value: DurationFormatting.compact(session.totalDuration()))
+            durationRow(icon: "🌿", title: "Активно", value: DurationFormatting.compact(session.activeWorkDuration()))
+            durationRow(icon: "☕", title: "Перерыв", value: DurationFormatting.compact(session.breakDuration()))
+            durationRow(icon: "💬", title: "Check-ins", value: "\(session.checkIns?.count ?? 0)")
+        }
+        .padding(18)
+        .parchmentCard()
+    }
+
+    private func durationRow(icon: String, title: String, value: String) -> some View {
+        HStack {
+            Text("\(icon)  \(title)")
+                .font(.lora(14))
+                .foregroundStyle(AppTheme.inkSoft)
+            Spacer()
+            Text(value)
+                .font(.lora(14, weight: .medium))
+                .foregroundStyle(AppTheme.ink)
         }
     }
 

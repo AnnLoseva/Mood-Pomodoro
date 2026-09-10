@@ -28,8 +28,8 @@ struct DashboardView: View {
                                     .foregroundStyle(AppTheme.ink)
                                     .padding(.horizontal)
                                 VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(session.timelineEntries) { entry in
-                                        TimelineRow(entry: entry)
+                                    ForEach(session.timelineEvents) { event in
+                                        TimelineRow(event: event)
                                     }
                                 }
                                 .parchmentCard()

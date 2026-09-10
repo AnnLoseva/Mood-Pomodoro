@@ -9,13 +9,26 @@ import SwiftUI
 /// horizontal size class — one codebase, no separate iPhone/iPad targets.
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(CloudSyncStatus.self) private var cloudSync
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                iPadRootView()
-            } else {
-                iPhoneRootView()
+        VStack(spacing: 0) {
+            if let banner = cloudSync.bannerText {
+                Text(banner)
+                    .font(.lora(12))
+                    .foregroundStyle(AppTheme.inkSoft)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(AppTheme.parchmentCard.opacity(0.92))
+            }
+            Group {
+                if horizontalSizeClass == .regular {
+                    iPadRootView()
+                } else {
+                    iPhoneRootView()
+                }
             }
         }
         .tint(AppTheme.forest)
@@ -94,4 +107,5 @@ private struct iPadRootView: View {
     ContentView()
         .environment(SessionManager(container: PersistenceController.makeContainer()))
         .environment(ReasonsStore.shared)
+        .environment(CloudSyncStatus())
 }

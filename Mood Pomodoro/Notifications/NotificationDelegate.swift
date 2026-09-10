@@ -7,15 +7,17 @@ import Foundation
 import UserNotifications
 import SwiftData
 
-/// Handles notification interactions for the full "Как ты?" → "Почему так?"
-/// → "Спасибо!" chain — every step is answerable from the lock screen, no
-/// need to open the app:
-///  - A mood emoji action writes a mood-only check-in, then immediately
-///    schedules the "Почему так?" follow-up for that mood.
-///  - A reason action fills in that check-in's reason, then schedules the
-///    "Спасибо!" confirmation.
-/// Tapping a notification's body instead opens the app to the matching step
-/// of `QuickCheckInSheet` via `onRequestQuickCheckIn`.
+/// Handles the zero-open check-in chain inside the *system* notification UI:
+///  1. Mood action on "Как ты?" writes a CheckIn (reason = nil) in the
+///     background — does not open the app.
+///  2. The original notification is dismissed and a follow-up "🥲 Почему?"
+///     is delivered immediately with data-driven reason actions.
+///  3. A reason action fills in that CheckIn and a short "Спасибо!" confirms.
+///
+/// iOS cannot swap a delivered notification's action buttons in place, so
+/// step 2 is a sequential local notification (official API), not a custom
+/// in-notification screen. Tapping the notification *body* (not an action)
+/// is the OS default and opens the in-app sheet as fallback.
 @MainActor
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationDelegate()
@@ -37,9 +39,13 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        await handle(response: response)
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            await handle(response: response)
+            completionHandler()
+        }
     }
 
     private func handle(response: UNNotificationResponse) async {
@@ -47,6 +53,11 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         let sessionID = (userInfo["sessionID"] as? String).flatMap(UUID.init)
         let checkInID = (userInfo["checkInID"] as? String).flatMap(UUID.init)
         let pendingMood = (userInfo["mood"] as? String).flatMap { Mood(rawValue: $0) }
+        // Every check-in notification action is idempotency-keyed off the
+        // request identifier it came from, not off anything derived at
+        // handling time — two deliveries of the exact same request (a
+        // double-tap, a system redelivery) must resolve to the exact same key.
+        let requestIdentifier = response.notification.request.identifier
 
         switch response.actionIdentifier {
         case UNNotificationDefaultActionIdentifier:
@@ -57,41 +68,102 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
         default:
             if let mood = NotificationScheduler.mood(fromActionIdentifier: response.actionIdentifier) {
-                await handleMoodAction(mood: mood, sessionID: sessionID)
+                let scheduled = userInfo["scheduledTimestamp"] as? Double
+                await handleMoodAction(
+                    mood: mood,
+                    sessionID: sessionID,
+                    sourceIdentifier: requestIdentifier,
+                    scheduledTimestamp: scheduled
+                )
             } else if let (mood, index) = NotificationScheduler.parseReasonAction(response.actionIdentifier) {
-                await handleReasonAction(mood: mood, index: index, sessionID: sessionID, checkInID: checkInID)
+                let snapshot = userInfo["reasonTexts"] as? [String]
+                await handleReasonAction(
+                    mood: mood,
+                    index: index,
+                    sessionID: sessionID,
+                    checkInID: checkInID,
+                    reasonTexts: snapshot
+                )
             }
         }
     }
 
-    private func handleMoodAction(mood: Mood, sessionID: UUID?) async {
+    private func handleMoodAction(
+        mood: Mood,
+        sessionID: UUID?,
+        sourceIdentifier: String,
+        scheduledTimestamp: Double?
+    ) async {
         guard let sessionID, let container = modelContainer else { return }
         let context = ModelContext(container)
-        let descriptor = FetchDescriptor<FocusSession>(predicate: #Predicate { $0.id == sessionID })
-        guard let session = try? context.fetch(descriptor).first, session.isActive else { return }
+
+        // Idempotency guard (spec section 20/tests 4-5): if this exact
+        // notification action already produced a check-in — a redelivered
+        // response, a double-tap before iOS dismissed the banner — do not
+        // create a second one.
+        let existingDescriptor = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.sourceIdentifier == sourceIdentifier })
+        guard (try? context.fetchCount(existingDescriptor)) == 0 else { return }
+
+        let occurrenceID = scheduledTimestamp.map { NotificationScheduler.occurrenceID(sessionID: sessionID, scheduledTimestamp: $0) }
+        if let occurrenceID {
+            let byOccurrence = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.occurrenceID == occurrenceID })
+            if (try? context.fetchCount(byOccurrence)) != 0 { return }
+        }
+
+        let sessionDescriptor = FetchDescriptor<FocusSession>(predicate: #Predicate { $0.id == sessionID })
+        // Only an *active* (not paused/completed/cancelled) session accepts a
+        // check-in: a reminder that fired right as the user paused, or that
+        // lingered from a session that has since ended, must not silently
+        // resurrect tracking for it.
+        guard let session = try? context.fetch(sessionDescriptor).first, session.state == .active else { return }
 
         let timestamp = Date.now
-        let checkIn = CheckIn(timestamp: timestamp, mood: mood, conditionSnapshot: session.activeConditions(asOf: timestamp))
+        let checkIn = CheckIn(
+            timestamp: timestamp,
+            mood: mood,
+            conditionSnapshot: session.activeConditions(asOf: timestamp),
+            sourceIdentifier: sourceIdentifier,
+            occurrenceID: occurrenceID,
+            scheduledAt: scheduledTimestamp.map { Date(timeIntervalSince1970: $0) },
+            origin: occurrenceID == nil ? .manual : .scheduled
+        )
         checkIn.session = session
-        session.checkIns.append(checkIn)
+        session.checkIns = (session.checkIns ?? []) + [checkIn]
         try? context.save()
 
         await NotificationScheduler.topUpIfNeeded(for: session)
-        await NotificationScheduler.scheduleReasonPrompt(sessionID: sessionID, checkInID: checkIn.id, mood: mood)
+        NotificationScheduler.removeDelivered(identifiers: [sourceIdentifier])
+        let reasons = ReasonsStore.shared.reasons(for: mood)
+        await NotificationScheduler.scheduleReasonPrompt(
+            sessionID: sessionID,
+            checkInID: checkIn.id,
+            mood: mood,
+            reasons: reasons
+        )
+        await LiveActivityController.update(for: session)
     }
 
-    private func handleReasonAction(mood: Mood, index: Int, sessionID: UUID?, checkInID: UUID?) async {
+    private func handleReasonAction(
+        mood: Mood,
+        index: Int,
+        sessionID: UUID?,
+        checkInID: UUID?,
+        reasonTexts: [String]?
+    ) async {
         guard let sessionID, let checkInID, let container = modelContainer else { return }
-        let reasons = ReasonsStore.shared.reasons(for: mood)
+        let reasons = reasonTexts ?? ReasonsStore.shared.reasons(for: mood)
         guard reasons.indices.contains(index) else { return }
 
         let context = ModelContext(container)
         let descriptor = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.id == checkInID })
         guard let checkIn = try? context.fetch(descriptor).first else { return }
+        if checkIn.reason != nil { return }
 
         checkIn.reason = reasons[index]
         try? context.save()
 
-        await NotificationScheduler.scheduleThankYou(sessionID: sessionID)
+        NotificationScheduler.removeDelivered(identifiers: [
+            NotificationScheduler.reasonRequestIdentifier(sessionID: sessionID, checkInID: checkInID)
+        ])
     }
 }

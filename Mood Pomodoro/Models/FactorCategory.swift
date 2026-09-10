@@ -13,18 +13,18 @@ import SwiftData
 /// screen, even though that editor doesn't exist yet).
 @Model
 final class FactorCategory {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var icon: String
+    var id: UUID = UUID()
+    var name: String = ""
+    var icon: String = ""
     /// Illustrated icon asset name, when this category has custom art
     /// (falls back to the `icon` emoji when nil — e.g. for categories the
     /// user adds later, which won't have matching artwork).
     var iconImageName: String?
-    var isEnabled: Bool
-    var sortOrder: Int
+    var isEnabled: Bool = true
+    var sortOrder: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \FactorOption.category)
-    var options: [FactorOption] = []
+    var options: [FactorOption]? = []
 
     init(
         id: UUID = UUID(),
@@ -43,22 +43,22 @@ final class FactorCategory {
     }
 
     var enabledOptions: [FactorOption] {
-        options.filter(\.isEnabled).sorted { $0.sortOrder < $1.sortOrder }
+        (options ?? []).filter(\.isEnabled).sorted { $0.sortOrder < $1.sortOrder }
     }
 }
 
 /// One selectable value within a `FactorCategory` (e.g. "Lo-fi" under "Музыка").
 @Model
 final class FactorOption {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var icon: String
+    var id: UUID = UUID()
+    var name: String = ""
+    var icon: String = ""
     /// Illustrated icon specific to this option (e.g. the drinks each have
     /// their own artwork rather than sharing the category's). Falls back to
     /// the category's icon, then its emoji, when nil.
     var iconImageName: String?
-    var isEnabled: Bool
-    var sortOrder: Int
+    var isEnabled: Bool = true
+    var sortOrder: Int = 0
     var category: FactorCategory?
 
     init(

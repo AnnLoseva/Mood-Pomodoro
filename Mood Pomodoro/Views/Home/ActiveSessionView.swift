@@ -31,9 +31,22 @@ struct ActiveSessionView: View {
                             .foregroundStyle(AppTheme.ink)
                             .monospacedDigit()
                         if session.isPaused {
-                            Label("На паузе", systemImage: "pause.fill")
+                            VStack(spacing: 4) {
+                                Label("🌙 Перерыв", systemImage: "moon.fill")
+                                    .font(.lora(15, weight: .medium))
+                                    .foregroundStyle(AppTheme.rustDeep)
+                                Text(formattedElapsed(session.breakDuration(asOf: context.date)))
+                                    .font(.lora(22, weight: .medium))
+                                    .foregroundStyle(AppTheme.ink)
+                                    .monospacedDigit()
+                                Text("Ты можешь спокойно отдохнуть.")
+                                    .font(.lora(13))
+                                    .foregroundStyle(AppTheme.inkSoft)
+                            }
+                        } else {
+                            Text("🟢 Работа")
                                 .font(.lora(13, weight: .medium))
-                                .foregroundStyle(AppTheme.rustDeep)
+                                .foregroundStyle(AppTheme.forest)
                         }
                     }
 
@@ -52,12 +65,14 @@ struct ActiveSessionView: View {
                         onTap: { openConditionsPicker() }
                     )
 
-                    Button {
-                        showQuickCheckIn = true
-                    } label: {
-                        Text("Как я сейчас?")
+                    if !session.isPaused {
+                        Button {
+                            showQuickCheckIn = true
+                        } label: {
+                            Text("Как я сейчас?")
+                        }
+                        .buttonStyle(.goblinPrimary)
                     }
-                    .buttonStyle(.goblinPrimary)
 
                     HStack(spacing: 14) {
                         Button {
@@ -120,7 +135,7 @@ struct ActiveSessionView: View {
         var resolved: [FactorCategory: FactorOption] = [:]
         for entry in active {
             guard let category = allCategories.first(where: { $0.id == entry.categoryID }),
-                  let option = category.options.first(where: { $0.id == entry.optionID }) else { continue }
+                  let option = (category.options ?? []).first(where: { $0.id == entry.optionID }) else { continue }
             resolved[category] = option
         }
         conditionsSelection = resolved

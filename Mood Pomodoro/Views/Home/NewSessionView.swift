@@ -13,7 +13,11 @@ struct NewSessionView: View {
     @State private var showConditionsPicker = false
     @FocusState private var activityFieldFocused: Bool
 
+    #if DEBUG
+    private let intervalOptions = [1, 5, 10, 15, 20, 30]
+    #else
     private let intervalOptions = [5, 10, 15, 20, 30]
+    #endif
 
     var body: some View {
         ScrollView {
@@ -62,6 +66,13 @@ struct NewSessionView: View {
                             .font(.lora(14, weight: .medium))
                             .foregroundStyle(AppTheme.inkSoft)
                         IntervalPicker(options: intervalOptions, selection: $intervalMinutes)
+                        #if DEBUG
+                        if intervalMinutes == 1 {
+                            Text("1 минута только для проверки уведомлений — в обычном режиме по умолчанию 10 минут.")
+                                .font(.lora(12))
+                                .foregroundStyle(AppTheme.inkSoft)
+                        }
+                        #endif
                     }
 
                     ConditionsSummaryView(

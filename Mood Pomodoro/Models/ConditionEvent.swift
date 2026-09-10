@@ -15,15 +15,16 @@ import SwiftData
 /// the user's feet if they later rename or disable a category/option.
 @Model
 final class ConditionEvent {
-    @Attribute(.unique) var id: UUID
-    var timestamp: Date
-    var categoryID: UUID
-    var categoryName: String
-    var categoryIcon: String
+    var id: UUID = UUID()
+    var timestamp: Date = Date.now
+    var categoryID: UUID = UUID()
+    var categoryName: String = ""
+    var categoryIcon: String = ""
     var categoryIconImageName: String?
-    var optionID: UUID
-    var optionName: String
+    var optionID: UUID = UUID()
+    var optionName: String = ""
     var optionIconImageName: String?
+    var createdAt: Date = Date.now
     var session: FocusSession?
 
     init(
@@ -41,6 +42,7 @@ final class ConditionEvent {
         self.optionID = option.id
         self.optionName = option.name
         self.optionIconImageName = option.iconImageName
+        self.createdAt = timestamp
     }
 
     var asSnapshotEntry: ConditionSnapshotEntry {

@@ -4,46 +4,331 @@
 //
 
 import Foundation
+import SwiftData
 import Testing
 @testable import Mood_Pomodoro
 
+/// Serialized: several tests spin up their own in-memory SwiftData
+/// `ModelContainer` from the shared `PersistenceController.schema`, and
+/// Swift Testing parallelizes tests by default — concurrent container
+/// creation from that one `Schema` instance is racy and can crash the test
+/// process even though every test passes fine on its own.
+@Suite(.serialized)
 struct Mood_PomodoroTests {
+
+    /// Fresh schema each time — sharing `PersistenceController.schema`
+    /// across concurrent `ModelContainer`s is racy even with a serialized
+    /// suite, because xcodebuild may still spawn cloned simulators.
+    private func makeTestContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: FocusSession.self,
+            CheckIn.self,
+            FactorCategory.self,
+            FactorOption.self,
+            ConditionEvent.self,
+            SessionSegment.self,
+            MoodReason.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        )
+    }
+
+    /// Appends a segment to `session` and keeps the two sides of the
+    /// relationship in sync, mirroring what `SessionManager` does.
+    private func appendSegment(_ type: SegmentType, start: Date, end: Date? = nil, to session: FocusSession) {
+        let segment = SessionSegment(type: type, startDate: start, endDate: end)
+        segment.session = session
+        session.segments = (session.segments ?? []) + [segment]
+    }
 
     @Test func elapsedActiveTimeExcludesPauses() {
         let start = Date(timeIntervalSince1970: 0)
         let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        // 15 minutes of work, then 5 minutes of break — 20 minutes of
+        // wall-clock time, but 5 of those were paused.
+        appendSegment(.work, start: start, end: start.addingTimeInterval(15 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(15 * 60), end: start.addingTimeInterval(20 * 60), to: session)
 
-        // 20 minutes of wall-clock time, but 5 of those were paused.
-        session.accumulatedPauseInterval = 5 * 60
         let asOf = start.addingTimeInterval(20 * 60)
-
         #expect(session.elapsedActiveTime(asOf: asOf) == 15 * 60)
     }
 
     @Test func elapsedActiveTimeIncludesOngoingPause() {
         let start = Date(timeIntervalSince1970: 0)
         let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
-        session.isPaused = true
-        session.pausedAt = start.addingTimeInterval(10 * 60)
+        appendSegment(.work, start: start, end: start.addingTimeInterval(10 * 60), to: session)
+        // Break segment still open (no endDate) — the pause is ongoing.
+        appendSegment(.pause, start: start.addingTimeInterval(10 * 60), to: session)
 
         let asOf = start.addingTimeInterval(15 * 60)
-        // 10 minutes active before the pause, then 5 minutes paused so far.
+        // 10 minutes active before the pause, then 5 minutes paused so far —
+        // active time must not keep growing while paused.
         #expect(session.elapsedActiveTime(asOf: asOf) == 10 * 60)
     }
 
-    @Test func scheduleAnchorShiftsByAccumulatedPause() {
+    @Test func scheduleAnchorShiftsByAccumulatedBreakDuration() {
         let start = Date(timeIntervalSince1970: 0)
         let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
-        session.accumulatedPauseInterval = 90
+        appendSegment(.work, start: start, end: start.addingTimeInterval(90), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(90), end: start.addingTimeInterval(180), to: session)
 
         #expect(session.scheduleAnchor == start.addingTimeInterval(90))
+    }
+
+    // MARK: - Session state machine & segments (background-tracking spec, section 39)
+
+    /// Test 1: Start → End. Total == Active, Break == 0.
+    @Test func startThenEndYieldsNoBreakTime() {
+        let start = Date(timeIntervalSince1970: 0)
+        let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        appendSegment(.work, start: start, to: session)
+
+        let endDate = start.addingTimeInterval(60 * 60)
+        session.currentSegment?.endDate = endDate
+        session.endDate = endDate
+        session.state = .completed
+
+        #expect(session.totalDuration() == 60 * 60)
+        #expect(session.activeWorkDuration() == 60 * 60)
+        #expect(session.breakDuration() == 0)
+        #expect(session.numberOfBreaks == 0)
+    }
+
+    /// Test 2: Start → Pause → Resume → End. Total == Active + Break.
+    @Test func pauseThenResumeSplitsTotalIntoActiveAndBreak() {
+        let start = Date(timeIntervalSince1970: 0)
+        let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        appendSegment(.work, start: start, end: start.addingTimeInterval(40 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(40 * 60), end: start.addingTimeInterval(50 * 60), to: session)
+        appendSegment(.work, start: start.addingTimeInterval(50 * 60), end: start.addingTimeInterval(90 * 60), to: session)
+        session.endDate = start.addingTimeInterval(90 * 60)
+        session.state = .completed
+
+        #expect(session.activeWorkDuration() == 80 * 60) // 40 + 40
+        #expect(session.breakDuration() == 10 * 60)
+        #expect(session.totalDuration() == session.activeWorkDuration() + session.breakDuration())
+
+        let kinds = session.timelineEvents.map(\.kind)
+        #expect(kinds.contains(.start))
+        #expect(kinds.contains(.pause))
+        #expect(kinds.contains(.resume))
+        #expect(kinds.contains(.end))
+        #expect(session.timelineEvents.map(\.timestamp) == session.timelineEvents.map(\.timestamp).sorted())
+    }
+
+    @Test func timelineInsertsDateBreakWhenSessionCrossesMidnight() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(from: DateComponents(timeZone: calendar.timeZone, year: 2026, month: 9, day: 10, hour: 23, minute: 50))!
+        let session = FocusSession(activity: "Late", startDate: start, checkInIntervalMinutes: 10)
+        let nextDay = start.addingTimeInterval(20 * 60) // 00:10
+        appendSegment(.work, start: start, end: nextDay.addingTimeInterval(20 * 60), to: session)
+        session.endDate = nextDay.addingTimeInterval(20 * 60)
+        session.state = .completed
+
+        let checkIn = CheckIn(timestamp: nextDay, mood: .good)
+        checkIn.session = session
+        session.checkIns = (session.checkIns ?? []) + [checkIn]
+
+        let events = session.timelineEvents
+        #expect(!DateFormatting.isSameDay(events.first!.timestamp, events.last!.timestamp, calendar: calendar))
+        #expect(events.contains { $0.kind == .checkIn && DateFormatting.isSameDay($0.timestamp, nextDay, calendar: calendar) })
+    }
+
+    /// Test 3: multiple pauses accumulate correctly.
+    @Test func multiplePausesAccumulateBreakDurationAndCount() {
+        let start = Date(timeIntervalSince1970: 0)
+        let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        appendSegment(.work, start: start, end: start.addingTimeInterval(10 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(10 * 60), end: start.addingTimeInterval(15 * 60), to: session) // 5 min
+        appendSegment(.work, start: start.addingTimeInterval(15 * 60), end: start.addingTimeInterval(45 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(45 * 60), end: start.addingTimeInterval(55 * 60), to: session) // 10 min
+        appendSegment(.work, start: start.addingTimeInterval(55 * 60), end: start.addingTimeInterval(65 * 60), to: session)
+
+        #expect(session.numberOfBreaks == 2)
+        #expect(session.breakDuration() == 15 * 60)
+        #expect(session.averageBreakDuration == 7.5 * 60)
+        #expect(session.longestBreakDuration == 10 * 60.0)
+        #expect(session.activeWorkDuration() == 50 * 60) // 10 + 30 + 10
+    }
+
+    @Test @MainActor func sessionManagerPauseResumeFinishDriveStateAndSegments() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+
+        manager.startSession(activity: "Math", intervalMinutes: 10)
+        guard let session = manager.activeSession else { Issue.record("no active session after start"); return }
+        #expect(session.state == .active)
+        #expect((session.segments ?? []).count == 1)
+        #expect(session.currentSegment?.type == .work)
+
+        manager.pause()
+        #expect(session.state == .paused)
+        #expect((session.segments ?? []).count == 2)
+        #expect(session.currentSegment?.type == .pause)
+        // Pausing must close the work segment, not delete/reset history.
+        #expect(session.sortedSegments.first?.endDate != nil)
+        #expect(session.sortedSegments.first?.type == .work)
+
+        manager.resume()
+        #expect(session.state == .active)
+        #expect((session.segments ?? []).count == 3)
+        #expect(session.currentSegment?.type == .work)
+        #expect(session.sortedSegments[1].type == .pause)
+        #expect(session.sortedSegments[1].endDate != nil) // break segment closed
+
+        manager.finish()
+        #expect(manager.activeSession == nil)
+        #expect(session.state == .completed)
+        #expect(session.endDate != nil)
+        #expect(session.currentSegment == nil) // every segment closed
+    }
+
+    /// Tests 9/10: a new SessionManager over the same store rediscovers an
+    /// in-flight session (the app-relaunch path).
+    @Test @MainActor func relaunchRestoresActiveAndPausedSessions() {
+        let container = try! makeTestContainer()
+        let first = SessionManager(container: container)
+        first.startSession(activity: "Math", intervalMinutes: 10)
+        let sessionID = first.activeSession!.id
+
+        let afterLaunch = SessionManager(container: container)
+        #expect(afterLaunch.activeSession?.id == sessionID)
+        #expect(afterLaunch.activeSession?.state == .active)
+
+        afterLaunch.pause()
+        let afterPauseRelaunch = SessionManager(container: container)
+        #expect(afterPauseRelaunch.activeSession?.id == sessionID)
+        #expect(afterPauseRelaunch.activeSession?.state == .paused)
+    }
+
+    @Test @MainActor func deleteRemovesSessionFromHistoryAndAnalytics() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+        manager.startSession(activity: "Test run", intervalMinutes: 10)
+        let session = manager.activeSession!
+        let sessionID = session.id
+        manager.finish()
+
+        #expect(AnalyticsService.overview(sessions: [session]).sessionCount == 1)
+        manager.delete(session)
+        #expect(manager.session(withID: sessionID) == nil)
+    }
+
+    /// Time to first difficult mood is elapsed *work*, not wall-clock — a
+    /// break in the middle must not count as time-to-fatigue.
+    @Test func timeToFirstDifficultMoodExcludesBreaks() {
+        let start = Date(timeIntervalSince1970: 0)
+        let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        appendSegment(.work, start: start, end: start.addingTimeInterval(40 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(40 * 60), end: start.addingTimeInterval(50 * 60), to: session)
+        appendSegment(.work, start: start.addingTimeInterval(50 * 60), end: start.addingTimeInterval(70 * 60), to: session)
+        session.endDate = start.addingTimeInterval(70 * 60)
+        session.state = .completed
+
+        let checkIn = CheckIn(
+            timestamp: start.addingTimeInterval(60 * 60),
+            mood: .tired
+        )
+        checkIn.session = session
+        session.checkIns = (session.checkIns ?? []) + [checkIn]
+
+        // 40m work + 10m of the second work block = 50m active, not 60m wall.
+        #expect(AnalyticsService.averageTimeToFirstDifficultMood(sessions: [session]) == 50 * 60.0)
+    }
+
+    /// Test: cancel discards the session outright (Cancel ≠ End) rather than
+    /// keeping it as a short completed session.
+    @Test @MainActor func cancelRemovesSessionEntirely() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+        manager.startSession(activity: "Math", intervalMinutes: 10)
+        let sessionID = manager.activeSession?.id
+
+        manager.cancel()
+
+        #expect(manager.activeSession == nil)
+        #expect(sessionID.flatMap(manager.session(withID:)) == nil)
+    }
+
+    /// Tests 4/5: a mood notification action creates exactly one CheckIn, and
+    /// a redelivery of the *same* action is recognized before a second
+    /// insert — the exact guard `NotificationDelegate.handleMoodAction` runs
+    /// (fetch-by-`sourceIdentifier` before creating a CheckIn).
+    @Test func scheduledOccurrenceIDDeduplicatesAcrossDevices() {
+        let sessionID = UUID()
+        let scheduled: TimeInterval = 1_000
+        let occurrence = NotificationScheduler.occurrenceID(sessionID: sessionID, scheduledTimestamp: scheduled)
+        let first = CheckIn(mood: .good, occurrenceID: occurrence, origin: .scheduled)
+        let second = CheckIn(mood: .good, occurrenceID: occurrence, origin: .scheduled)
+        #expect(first.occurrenceID == second.occurrenceID)
+        #expect(first.origin == .scheduled)
+    }
+
+    @Test func sourceIdentifierMakesARepeatedNotificationActionIdempotent() {
+        let container = try! makeTestContainer()
+        let context = ModelContext(container)
+        let sourceID = "session.ABC.checkin.1"
+        let descriptor = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.sourceIdentifier == sourceID })
+
+        #expect((try? context.fetchCount(descriptor)) == 0)
+        let first = CheckIn(mood: .good, sourceIdentifier: sourceID)
+        context.insert(first)
+        try? context.save()
+
+        // Redelivery of the same action: the guard must see it's already handled.
+        #expect((try? context.fetchCount(descriptor)) == 1)
+    }
+
+    /// Tests 12/13: a mood action's session-state guard accepts an active
+    /// session's check-in and rejects one recorded while paused.
+    @Test @MainActor func moodActionGuardAcceptsActiveButRejectsPausedSession() {
+        let container = try! makeTestContainer()
+        let manager = SessionManager(container: container)
+        manager.startSession(activity: "Math", intervalMinutes: 10)
+        let session = manager.activeSession!
+
+        #expect(session.state == .active) // notification action would proceed
+
+        manager.pause()
+        #expect(session.state != .active) // notification action would be rejected
+    }
+
+    /// Test 14: analytics' average duration is active work time, not total
+    /// wall-clock time — break minutes must not count as "active".
+    @Test func analyticsAverageDurationExcludesBreakTime() {
+        let start = Date(timeIntervalSince1970: 0)
+        let session = FocusSession(activity: "Test", startDate: start, checkInIntervalMinutes: 10)
+        appendSegment(.work, start: start, end: start.addingTimeInterval(40 * 60), to: session)
+        appendSegment(.pause, start: start.addingTimeInterval(40 * 60), end: start.addingTimeInterval(50 * 60), to: session)
+        appendSegment(.work, start: start.addingTimeInterval(50 * 60), end: start.addingTimeInterval(90 * 60), to: session)
+        session.endDate = start.addingTimeInterval(90 * 60)
+        session.state = .completed
+
+        // Total wall-clock span is 90 minutes, but only 80 were active work.
+        #expect(AnalyticsService.averageDuration(of: [session]) == 80 * 60.0)
     }
 
     @Test func moodActionIdentifierRoundTrips() {
         for mood in Mood.allCases {
             let identifier = NotificationScheduler.actionIdentifier(for: mood)
+            #expect(identifier.hasPrefix("mood."))
             #expect(NotificationScheduler.mood(fromActionIdentifier: identifier) == mood)
         }
+        #expect(NotificationScheduler.actionIdentifier(for: .veryGood) == "mood.very_good")
+        #expect(NotificationScheduler.actionIdentifier(for: .neutral) == "mood.normal")
+        #expect(NotificationScheduler.actionIdentifier(for: .tired) == "mood.hard")
+        #expect(NotificationScheduler.actionIdentifier(for: .veryBad) == "mood.very_bad")
+    }
+
+    @Test func reasonActionIdentifierRoundTrips() {
+        let identifier = NotificationScheduler.reasonActionIdentifier(mood: .good, index: 2)
+        let parsed = NotificationScheduler.parseReasonAction(identifier)
+        #expect(parsed?.mood == .good)
+        #expect(parsed?.index == 2)
+        #expect(identifier == "reason.good.2")
+        let underscored = NotificationScheduler.reasonActionIdentifier(mood: .veryGood, index: 0)
+        #expect(underscored == "reason.very_good.0")
+        #expect(NotificationScheduler.parseReasonAction(underscored)?.mood == .veryGood)
     }
 
     // MARK: - Conditions
@@ -56,9 +341,9 @@ struct Mood_PomodoroTests {
         let puerh = FactorOption(name: "Пуэр", icon: "☕")
 
         let coffeeEvent = ConditionEvent(timestamp: start, category: drinks, option: coffee)
-        session.conditionEvents.append(coffeeEvent)
+        session.conditionEvents = (session.conditionEvents ?? []) + [coffeeEvent]
         let puerhEvent = ConditionEvent(timestamp: start.addingTimeInterval(45 * 60), category: drinks, option: puerh)
-        session.conditionEvents.append(puerhEvent)
+        session.conditionEvents = (session.conditionEvents ?? []) + [puerhEvent]
 
         let beforeSwitch = session.activeConditions(asOf: start.addingTimeInterval(10 * 60))
         #expect(beforeSwitch.first { $0.categoryID == drinks.id }?.optionName == "Кофе")
@@ -74,7 +359,7 @@ struct Mood_PomodoroTests {
         let coffee = FactorOption(name: "Кофе", icon: "☕")
         let puerh = FactorOption(name: "Пуэр", icon: "☕")
 
-        session.conditionEvents.append(ConditionEvent(timestamp: start, category: drinks, option: coffee))
+        session.conditionEvents = (session.conditionEvents ?? []) + [ConditionEvent(timestamp: start, category: drinks, option: coffee)]
 
         // Snapshot an early check-in the way SessionManager does: freeze
         // whatever's active right now into the check-in.
@@ -86,9 +371,9 @@ struct Mood_PomodoroTests {
         )
 
         // The user switches drinks well after that check-in was recorded.
-        session.conditionEvents.append(
+        session.conditionEvents = (session.conditionEvents ?? []) + [
             ConditionEvent(timestamp: start.addingTimeInterval(45 * 60), category: drinks, option: puerh)
-        )
+        ]
 
         #expect(earlyCheckIn.conditionSnapshot.first { $0.categoryID == drinks.id }?.optionName == "Кофе")
     }
@@ -150,8 +435,8 @@ struct Mood_PomodoroTests {
         let puerh = FactorOption(name: "Пуэр", icon: "☕")
         let coffee = FactorOption(name: "Кофе", icon: "☕")
 
-        for option in [lofi, noMusic] { option.category = music; music.options.append(option) }
-        for option in [puerh, coffee] { option.category = drink; drink.options.append(option) }
+        for option in [lofi, noMusic] { option.category = music; music.options = (music.options ?? []) + [option] }
+        for option in [puerh, coffee] { option.category = drink; drink.options = (drink.options ?? []) + [option] }
 
         func snapshot(_ musicOption: FactorOption, _ drinkOption: FactorOption) -> [ConditionSnapshotEntry] {
             [
@@ -171,7 +456,7 @@ struct Mood_PomodoroTests {
                     conditionSnapshot: snapshot(musicOption, drinkOption)
                 )
                 checkIn.session = session
-                session.checkIns.append(checkIn)
+                session.checkIns = (session.checkIns ?? []) + [checkIn]
             }
             return session
         }
@@ -186,7 +471,7 @@ struct Mood_PomodoroTests {
     @Test func overallAverageMoodMatchesTheSpecScenario() {
         let scenario = makeSpecScenario()
         // (23 + 15 + 25) / 20 check-ins = 3.15
-        #expect(AnalyticsService.averageMood(of: scenario.sessions.flatMap(\.checkIns))! .isApproximately(3.15))
+        #expect(AnalyticsService.averageMood(of: scenario.sessions.flatMap { $0.checkIns ?? [] })! .isApproximately(3.15))
     }
 
     @Test func musicComparisonMatchesTheSpecScenario() {

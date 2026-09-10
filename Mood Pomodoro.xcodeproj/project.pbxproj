@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		88C609AA30529F5900B55E85 /* MoodPomodoroLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88C609A130529F5900B55E85 /* MoodPomodoroLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		88C608D130529F5900B55E85 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,13 +25,45 @@
 			remoteGlobalIDString = 88C608BD30529F5800B55E85;
 			remoteInfo = "Mood Pomodoro";
 		};
+		88C609A230529F5900B55E85 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88C608B630529F5800B55E85 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 88C609A330529F5900B55E85;
+			remoteInfo = MoodPomodoroLiveActivity;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		88C609A930529F5900B55E85 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				88C609AA30529F5900B55E85 /* MoodPomodoroLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		88C608BE30529F5800B55E85 /* Mood Pomodoro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mood Pomodoro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		88C608D030529F5900B55E85 /* Mood PomodoroTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Mood PomodoroTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		88C608DA30529F5900B55E85 /* Mood PomodoroUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Mood PomodoroUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		88C609A130529F5900B55E85 /* MoodPomodoroLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoodPomodoroLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		88C609AF30529F5900B55E85 /* Exceptions for "MoodPomodoroLiveActivity" folder in "MoodPomodoroLiveActivity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 88C609A330529F5900B55E85 /* MoodPomodoroLiveActivity */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		88C608C030529F5800B55E85 /* Mood Pomodoro */ = {
@@ -43,6 +79,19 @@
 		88C608DD30529F5900B55E85 /* Mood PomodoroUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Mood PomodoroUITests";
+			sourceTree = "<group>";
+		};
+		88C609A430529F5900B55E85 /* MoodPomodoroLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				88C609AF30529F5900B55E85 /* Exceptions for "MoodPomodoroLiveActivity" folder in "MoodPomodoroLiveActivity" target */,
+			);
+			path = MoodPomodoroLiveActivity;
+			sourceTree = "<group>";
+		};
+		88C609A530529F5900B55E85 /* Mood Pomodoro/Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Mood Pomodoro/Shared";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +118,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		88C609A630529F5900B55E85 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -76,9 +132,11 @@
 			isa = PBXGroup;
 			children = (
 				88C608C030529F5800B55E85 /* Mood Pomodoro */,
+				88C609A430529F5900B55E85 /* MoodPomodoroLiveActivity */,
 				88C608D330529F5900B55E85 /* Mood PomodoroTests */,
 				88C608DD30529F5900B55E85 /* Mood PomodoroUITests */,
 				88C608BF30529F5800B55E85 /* Products */,
+				88C60B3A3052C4BC00B55E85 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -88,8 +146,17 @@
 				88C608BE30529F5800B55E85 /* Mood Pomodoro.app */,
 				88C608D030529F5900B55E85 /* Mood PomodoroTests.xctest */,
 				88C608DA30529F5900B55E85 /* Mood PomodoroUITests.xctest */,
+				88C609A130529F5900B55E85 /* MoodPomodoroLiveActivity.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		88C60B3A3052C4BC00B55E85 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				88C609A530529F5900B55E85 /* Mood Pomodoro/Shared */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,10 +169,12 @@
 				88C608BA30529F5800B55E85 /* Sources */,
 				88C608BB30529F5800B55E85 /* Frameworks */,
 				88C608BC30529F5800B55E85 /* Resources */,
+				88C609A930529F5900B55E85 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				88C609AB30529F5900B55E85 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				88C608C030529F5800B55E85 /* Mood Pomodoro */,
@@ -157,6 +226,27 @@
 			productReference = 88C608DA30529F5900B55E85 /* Mood PomodoroUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		88C609A330529F5900B55E85 /* MoodPomodoroLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 88C609AE30529F5900B55E85 /* Build configuration list for PBXNativeTarget "MoodPomodoroLiveActivity" */;
+			buildPhases = (
+				88C609A730529F5900B55E85 /* Sources */,
+				88C609A630529F5900B55E85 /* Frameworks */,
+				88C609A830529F5900B55E85 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				88C609A430529F5900B55E85 /* MoodPomodoroLiveActivity */,
+				88C609A530529F5900B55E85 /* Mood Pomodoro/Shared */,
+			);
+			name = MoodPomodoroLiveActivity;
+			productName = MoodPomodoroLiveActivity;
+			productReference = 88C609A130529F5900B55E85 /* MoodPomodoroLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -178,6 +268,9 @@
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 88C608BD30529F5800B55E85;
 					};
+					88C609A330529F5900B55E85 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 				};
 			};
 			buildConfigurationList = 88C608B930529F5800B55E85 /* Build configuration list for PBXProject "Mood Pomodoro" */;
@@ -195,6 +288,7 @@
 			projectRoot = "";
 			targets = (
 				88C608BD30529F5800B55E85 /* Mood Pomodoro */,
+				88C609A330529F5900B55E85 /* MoodPomodoroLiveActivity */,
 				88C608CF30529F5900B55E85 /* Mood PomodoroTests */,
 				88C608D930529F5900B55E85 /* Mood PomodoroUITests */,
 			);
@@ -217,6 +311,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		88C608D830529F5900B55E85 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88C609A830529F5900B55E85 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -247,6 +348,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		88C609A730529F5900B55E85 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -259,6 +367,11 @@
 			isa = PBXTargetDependency;
 			target = 88C608BD30529F5800B55E85 /* Mood Pomodoro */;
 			targetProxy = 88C608DB30529F5900B55E85 /* PBXContainerItemProxy */;
+		};
+		88C609AB30529F5900B55E85 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 88C609A330529F5900B55E85 /* MoodPomodoroLiveActivity */;
+			targetProxy = 88C609A230529F5900B55E85 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,6 +508,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -429,6 +543,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -538,6 +653,64 @@
 			};
 			name = Release;
 		};
+		88C609AC30529F5900B55E85 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K36SNFAJDS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoodPomodoroLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Как ты?";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "AnnaLoseva.Mood-Pomodoro.LiveActivity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		88C609AD30529F5900B55E85 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K36SNFAJDS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MoodPomodoroLiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Как ты?";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "AnnaLoseva.Mood-Pomodoro.LiveActivity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -573,6 +746,15 @@
 			buildConfigurations = (
 				88C608EB30529F5900B55E85 /* Debug */,
 				88C608EC30529F5900B55E85 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		88C609AE30529F5900B55E85 /* Build configuration list for PBXNativeTarget "MoodPomodoroLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				88C609AC30529F5900B55E85 /* Debug */,
+				88C609AD30529F5900B55E85 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

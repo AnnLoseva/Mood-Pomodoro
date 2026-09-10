@@ -7,10 +7,23 @@ import SwiftUI
 import SwiftData
 
 struct HistoryView: View {
+    @Environment(SessionManager.self) private var sessionManager
     @Query(sort: \FocusSession.startDate, order: .reverse) private var sessions: [FocusSession]
 
     private var finishedSessions: [FocusSession] {
         sessions.filter { !$0.isActive }
+    }
+
+    private var sections: [HistoryDaySection] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: finishedSessions) { calendar.startOfDay(for: $0.startDate) }
+        return grouped.keys.sorted(by: >).map { day in
+            HistoryDaySection(
+                day: day,
+                title: DateFormatting.historySectionTitle(day),
+                sessions: (grouped[day] ?? []).sorted { $0.startDate > $1.startDate }
+            )
+        }
     }
 
     var body: some View {
@@ -34,12 +47,28 @@ struct HistoryView: View {
                     .padding(.horizontal, 32)
                 } else {
                     ScrollView {
-                        VStack(spacing: 12) {
-                            ForEach(finishedSessions, id: \.id) { session in
-                                NavigationLink(value: session.id) {
-                                    SessionRow(session: session)
+                        VStack(alignment: .leading, spacing: 22) {
+                            ForEach(sections) { section in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(section.title)
+                                        .font(.lora(13, weight: .semibold))
+                                        .foregroundStyle(AppTheme.inkSoft)
+                                        .padding(.horizontal, 4)
+
+                                    ForEach(section.sessions, id: \.id) { session in
+                                        NavigationLink(value: session.id) {
+                                            SessionRow(session: session)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                            Button(role: .destructive) {
+                                                sessionManager.delete(session)
+                                            } label: {
+                                                Label("Удалить", systemImage: "trash")
+                                            }
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -64,6 +93,13 @@ struct HistoryView: View {
     }
 }
 
+private struct HistoryDaySection: Identifiable {
+    let day: Date
+    let title: String
+    let sessions: [FocusSession]
+    var id: Date { day }
+}
+
 private struct SessionRow: View {
     let session: FocusSession
 
@@ -71,12 +107,22 @@ private struct SessionRow: View {
         HStack(spacing: 14) {
             if let mood = session.sortedCheckIns.last?.mood {
                 MoodImage(mood: mood, size: 44)
+            } else {
+                Text("🍄")
+                    .font(.system(size: 28))
+                    .frame(width: 44, height: 44)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.activity)
                     .font(.lora(17, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
-                Text("\(durationText) · \(session.checkIns.count) check-in")
+                Text(DateFormatting.fullDate(session.startDate))
+                    .font(.lora(13))
+                    .foregroundStyle(AppTheme.inkSoft)
+                Text(DateFormatting.timeRange(from: session.startDate, to: session.endDate))
+                    .font(.lora(13).monospacedDigit())
+                    .foregroundStyle(AppTheme.inkSoft)
+                Text(durationLine)
                     .font(.lora(13))
                     .foregroundStyle(AppTheme.inkSoft)
             }
@@ -96,12 +142,15 @@ private struct SessionRow: View {
         )
     }
 
-    private var durationText: String {
-        let end = session.endDate ?? .now
-        let total = Int(end.timeIntervalSince(session.startDate))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        if hours > 0 { return "\(hours)h \(minutes)m" }
-        return "\(minutes)m"
+    private var durationLine: String {
+        let total = DurationFormatting.compact(session.totalDuration())
+        let count = session.checkIns?.count ?? 0
+        let checkIns = "\(count) check-in"
+        if session.breakDuration() > 0 {
+            let active = DurationFormatting.compact(session.activeWorkDuration())
+            let pause = DurationFormatting.compact(session.breakDuration())
+            return "\(total) · \(active) активно · \(pause) перерыв · \(checkIns)"
+        }
+        return "\(total) · \(checkIns)"
     }
 }

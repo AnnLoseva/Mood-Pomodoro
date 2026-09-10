@@ -22,7 +22,7 @@ struct AnalyticsView: View {
     @State private var section: Section = .overview
 
     private var finishedOrActive: [FocusSession] { allSessions }
-    private var hasAnyCheckIns: Bool { allSessions.contains { !$0.checkIns.isEmpty } }
+    private var hasAnyCheckIns: Bool { allSessions.contains { !($0.checkIns ?? []).isEmpty } }
 
     var body: some View {
         NavigationStack {

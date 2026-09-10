@@ -22,8 +22,8 @@ enum AnalyticsService {
     // MARK: - Overview
 
     static func overview(sessions: [FocusSession]) -> OverviewStatistics {
-        let checkIns = sessions.flatMap(\.checkIns)
-        let finished = sessions.filter { $0.endDate != nil }
+        let checkIns = sessions.flatMap { $0.checkIns ?? [] }
+        let finished = sessions.filter { $0.state == .completed }
         return OverviewStatistics(
             averageMood: averageMood(of: checkIns),
             checkInCount: checkIns.count,
@@ -48,8 +48,8 @@ enum AnalyticsService {
 
     static func averageDuration(of sessions: [FocusSession]) -> TimeInterval? {
         let durations = sessions.compactMap { session -> TimeInterval? in
-            guard let end = session.endDate else { return nil }
-            return max(0, end.timeIntervalSince(session.startDate) - session.accumulatedPauseInterval)
+            guard session.endDate != nil else { return nil }
+            return session.activeWorkDuration()
         }
         guard !durations.isEmpty else { return nil }
         return durations.reduce(0, +) / Double(durations.count)
@@ -58,7 +58,9 @@ enum AnalyticsService {
     static func averageTimeToFirstDifficultMood(sessions: [FocusSession]) -> TimeInterval? {
         let times = sessions.compactMap { session -> TimeInterval? in
             guard let first = session.sortedCheckIns.first(where: { $0.mood.isDifficult }) else { return nil }
-            return first.timestamp.timeIntervalSince(session.startDate)
+            // Breaks are not active work — "time to fatigue" is elapsed
+            // *work* at the check-in, not wall-clock since session start.
+            return session.elapsedActiveTime(asOf: first.timestamp)
         }
         guard !times.isEmpty else { return nil }
         return times.reduce(0, +) / Double(times.count)
@@ -73,7 +75,7 @@ enum AnalyticsService {
     static func moodTrajectory(sessions: [FocusSession], bucketMinutes: Int = 20) -> [MoodTimelinePoint] {
         var buckets: [Int: [Double]] = [:]
         for session in sessions {
-            for checkIn in session.checkIns {
+            for checkIn in session.checkIns ?? [] {
                 let elapsedMinutes = checkIn.timestamp.timeIntervalSince(session.startDate) / 60
                 guard elapsedMinutes >= 0 else { continue }
                 let bucketStart = (Int(elapsedMinutes) / bucketMinutes) * bucketMinutes
@@ -177,7 +179,7 @@ enum AnalyticsService {
         } else {
             relevant = sessions
         }
-        return relevant.flatMap(\.checkIns)
+        return relevant.flatMap { $0.checkIns ?? [] }
     }
 
     // MARK: - Activities
@@ -185,7 +187,7 @@ enum AnalyticsService {
     static func activityStatistics(sessions: [FocusSession]) -> [ActivityStatistics] {
         var grouped: [String: [CheckIn]] = [:]
         for session in sessions {
-            grouped[session.activity, default: []].append(contentsOf: session.checkIns)
+            grouped[session.activity, default: []].append(contentsOf: session.checkIns ?? [])
         }
         return grouped
             .map { ActivityStatistics(activityName: $0.key, averageMood: averageMood(of: $0.value), checkInCount: $0.value.count) }
@@ -195,7 +197,7 @@ enum AnalyticsService {
     // MARK: - Reasons
 
     static func reasonStatistics(mood: Mood, sessions: [FocusSession]) -> [ReasonStatistic] {
-        let reasons = sessions.flatMap(\.checkIns).filter { $0.mood == mood }.compactMap(\.reason)
+        let reasons = sessions.flatMap { $0.checkIns ?? [] }.filter { $0.mood == mood }.compactMap(\.reason)
         guard !reasons.isEmpty else { return [] }
         let counts = Dictionary(grouping: reasons, by: { $0 }).mapValues(\.count)
         let total = reasons.count
@@ -226,7 +228,7 @@ enum AnalyticsService {
         selections: [(category: FactorCategory, option: FactorOption)],
         sessions: [FocusSession]
     ) -> FactorOptionStatistics {
-        let checkIns = sessions.flatMap(\.checkIns).filter { checkIn in
+        let checkIns = sessions.flatMap { $0.checkIns ?? [] }.filter { checkIn in
             selections.allSatisfy { checkIn.hasCondition(categoryID: $0.category.id, optionID: $0.option.id) }
         }
         let name = selections.map(\.option.name).joined(separator: " + ")
@@ -248,7 +250,7 @@ enum AnalyticsService {
     /// Top factor values whose average mood, with enough data, sits highest
     /// above the overall average — the "what's linked to a good mood" list.
     static func topPositiveFactors(categories: [FactorCategory], sessions: [FocusSession], limit: Int = 3) -> [FactorInsight] {
-        let allCheckIns = sessions.flatMap(\.checkIns)
+        let allCheckIns = sessions.flatMap { $0.checkIns ?? [] }
         guard let overallAverage = averageMood(of: allCheckIns) else { return [] }
 
         var insights: [FactorInsight] = []

@@ -18,6 +18,22 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
     /// Display order, from best to worst — matches the order used throughout the UI.
     static var orderedCases: [Mood] { [.veryGood, .good, .neutral, .tired, .veryBad] }
 
+    /// Stable ID used in `UNNotificationAction.identifier` (`mood.very_good`).
+    /// Not the display string — iOS matches actions by this ID.
+    var notificationActionID: String {
+        switch self {
+        case .veryGood: return "very_good"
+        case .good: return "good"
+        case .neutral: return "normal"
+        case .tired: return "hard"
+        case .veryBad: return "very_bad"
+        }
+    }
+
+    static func fromNotificationActionID(_ id: String) -> Mood? {
+        orderedCases.first { $0.notificationActionID == id }
+    }
+
     var emoji: String {
         switch self {
         case .veryGood: return "😍"
@@ -55,6 +71,17 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
 
     /// True for the two lower states — used to find "time to first difficult moment".
     var isDifficult: Bool { self == .tired || self == .veryBad }
+
+    /// SF Symbol used as the `UNNotificationAction` icon (iOS 15+).
+    var notificationIconName: String {
+        switch self {
+        case .veryGood: return "heart.fill"
+        case .good: return "face.smiling"
+        case .neutral: return "face.smiling"
+        case .tired: return "cloud.rain"
+        case .veryBad: return "cloud.heavyrain.fill"
+        }
+    }
 
     var label: String {
         switch self {

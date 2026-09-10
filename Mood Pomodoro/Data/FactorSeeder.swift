@@ -10,9 +10,20 @@ import SwiftData
 /// Runs once — if any `FactorCategory` already exists, it's a no-op, so
 /// user edits (renames, disables, new categories) are never overwritten.
 enum FactorSeeder {
+    private static let seededKey = "howAreYou.factorsSeeded"
+
     static func seedIfNeeded(context: ModelContext) {
         let existing = (try? context.fetchCount(FetchDescriptor<FactorCategory>())) ?? 0
-        guard existing == 0 else { return }
+        if existing > 0 {
+            NSUbiquitousKeyValueStore.default.set(true, forKey: seededKey)
+            dedupeCategories(in: context)
+            return
+        }
+        // Another device already seeded and CloudKit will import — don't
+        // create a second copy of the default categories.
+        if NSUbiquitousKeyValueStore.default.bool(forKey: seededKey) {
+            return
+        }
 
         for (index, spec) in defaultCategories.enumerated() {
             let category = FactorCategory(
@@ -30,8 +41,26 @@ enum FactorSeeder {
                     sortOrder: optionIndex
                 )
                 factorOption.category = category
-                category.options.append(factorOption)
+                category.options = (category.options ?? []) + [factorOption]
                 context.insert(factorOption)
+            }
+        }
+        try? context.save()
+        NSUbiquitousKeyValueStore.default.set(true, forKey: seededKey)
+        NSUbiquitousKeyValueStore.default.synchronize()
+        dedupeCategories(in: context)
+    }
+
+    /// Two devices can both seed before CloudKit's first import. Collapse
+    /// duplicate category names, keeping the oldest (first inserted) copy.
+    static func dedupeCategories(in context: ModelContext) {
+        let all = (try? context.fetch(FetchDescriptor<FactorCategory>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
+        var seen: [String: FactorCategory] = [:]
+        for category in all {
+            if seen[category.name] != nil {
+                context.delete(category)
+            } else {
+                seen[category.name] = category
             }
         }
         try? context.save()

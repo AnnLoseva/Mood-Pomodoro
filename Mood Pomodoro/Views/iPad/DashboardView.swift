@@ -12,35 +12,38 @@ struct DashboardView: View {
     @Environment(SessionManager.self) private var sessionManager
 
     var body: some View {
-        if let session = sessionManager.activeSession {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    ActiveSessionView(session: session)
-                        .frame(maxWidth: .infinity)
+        ZStack {
+            ForestBackdrop()
 
-                    if !session.sortedCheckIns.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Timeline")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(session.timelineEntries) { entry in
-                                    TimelineRow(entry: entry)
+            if let session = sessionManager.activeSession {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        ActiveSessionView(session: session)
+                            .frame(maxWidth: .infinity)
+
+                        if !session.sortedCheckIns.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Timeline")
+                                    .font(.lora(17, weight: .semibold))
+                                    .foregroundStyle(AppTheme.ink)
+                                    .padding(.horizontal)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(session.timelineEntries) { entry in
+                                        TimelineRow(entry: entry)
+                                    }
                                 }
+                                .parchmentCard()
+                                .padding(.horizontal)
                             }
-                            .padding()
-                            .background(Color(uiColor: .secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .padding(.horizontal)
+                            .frame(maxWidth: 600)
                         }
-                        .frame(maxWidth: 600)
                     }
+                    .padding(.vertical)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.vertical)
-                .frame(maxWidth: .infinity)
+            } else {
+                NewSessionView()
             }
-        } else {
-            NewSessionView()
         }
     }
 }

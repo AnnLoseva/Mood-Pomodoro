@@ -32,22 +32,16 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		88C608C030529F5800B55E85 /* Mood Pomodoro */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Mood Pomodoro";
 			sourceTree = "<group>";
 		};
 		88C608D330529F5900B55E85 /* Mood PomodoroTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Mood PomodoroTests";
 			sourceTree = "<group>";
 		};
 		88C608DD30529F5900B55E85 /* Mood PomodoroUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "Mood PomodoroUITests";
 			sourceTree = "<group>";
 		};
@@ -400,6 +394,7 @@
 				DEVELOPMENT_TEAM = K36SNFAJDS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -433,6 +428,7 @@
 				DEVELOPMENT_TEAM = K36SNFAJDS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

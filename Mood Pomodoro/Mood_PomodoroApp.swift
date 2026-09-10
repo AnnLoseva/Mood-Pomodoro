@@ -16,6 +16,8 @@ struct Mood_PomodoroApp: App {
     private let reasonsStore = ReasonsStore.shared
 
     @State private var quickCheckInSessionID: UUID?
+    @State private var quickCheckInPresetMood: Mood?
+    @State private var quickCheckInExistingID: UUID?
     @State private var showQuickCheckIn = false
 
     init() {
@@ -32,11 +34,17 @@ struct Mood_PomodoroApp: App {
                 .environment(reasonsStore)
                 .modelContainer(container)
                 .sheet(isPresented: $showQuickCheckIn) {
-                    QuickCheckInSheet(sessionID: quickCheckInSessionID)
+                    QuickCheckInSheet(
+                        sessionID: quickCheckInSessionID,
+                        presetMood: quickCheckInPresetMood,
+                        existingCheckInID: quickCheckInExistingID
+                    )
                 }
                 .task {
-                    NotificationDelegate.shared.onRequestQuickCheckIn = { sessionID in
+                    NotificationDelegate.shared.onRequestQuickCheckIn = { sessionID, presetMood, existingCheckInID in
                         quickCheckInSessionID = sessionID ?? sessionManager.activeSession?.id
+                        quickCheckInPresetMood = presetMood
+                        quickCheckInExistingID = existingCheckInID
                         showQuickCheckIn = true
                     }
                     _ = await NotificationScheduler.requestAuthorizationIfNeeded()

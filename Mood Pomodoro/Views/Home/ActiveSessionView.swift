@@ -14,91 +14,86 @@ struct ActiveSessionView: View {
     @State private var showCancelConfirm = false
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            VStack(spacing: 28) {
-                Spacer()
-
-                VStack(spacing: 6) {
-                    Text(session.activity)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(formattedElapsed(session.elapsedActiveTime(asOf: context.date)))
-                        .font(.system(size: 64, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    if session.isPaused {
-                        Label("На паузе", systemImage: "pause.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-                }
-
-                if !session.sortedCheckIns.isEmpty {
-                    HStack(spacing: 10) {
-                        ForEach(session.sortedCheckIns.suffix(6), id: \.id) { checkIn in
-                            Text(checkIn.mood.emoji)
-                                .font(.title2)
+        VStack {
+            Spacer(minLength: 0)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(spacing: 24) {
+                    VStack(spacing: 6) {
+                        Text(session.activity)
+                            .font(.lora(19, weight: .medium))
+                            .foregroundStyle(AppTheme.inkSoft)
+                        Text(formattedElapsed(session.elapsedActiveTime(asOf: context.date)))
+                            .font(.lora(60, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                            .monospacedDigit()
+                        if session.isPaused {
+                            Label("На паузе", systemImage: "pause.fill")
+                                .font(.lora(13, weight: .medium))
+                                .foregroundStyle(AppTheme.rustDeep)
                         }
                     }
-                }
 
-                Button {
-                    showQuickCheckIn = true
-                } label: {
-                    Text("Как я сейчас?")
-                        .font(.headline)
-                        .frame(maxWidth: 420)
-                        .padding()
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.horizontal)
-
-                HStack(spacing: 16) {
-                    Button {
-                        session.isPaused ? sessionManager.resume() : sessionManager.pause()
-                    } label: {
-                        Label(session.isPaused ? "Продолжить" : "Пауза",
-                              systemImage: session.isPaused ? "play.fill" : "pause.fill")
-                            .frame(maxWidth: .infinity)
-                            .padding()
+                    if !session.sortedCheckIns.isEmpty {
+                        HStack(spacing: 10) {
+                            ForEach(session.sortedCheckIns.suffix(6), id: \.id) { checkIn in
+                                MoodImage(mood: checkIn.mood, size: 40)
+                            }
+                        }
                     }
-                    .buttonStyle(.bordered)
 
                     Button {
-                        showFinishConfirm = true
+                        showQuickCheckIn = true
                     } label: {
-                        Label("Завершить", systemImage: "checkmark.circle")
-                            .frame(maxWidth: .infinity)
-                            .padding()
+                        Text("Как я сейчас?")
                     }
-                    .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: 420)
-                .padding(.horizontal)
+                    .buttonStyle(.goblinPrimary)
 
-                Button("Отменить сессию", role: .destructive) {
-                    showCancelConfirm = true
-                }
-                .font(.footnote)
-                .padding(.top, 4)
+                    HStack(spacing: 14) {
+                        Button {
+                            session.isPaused ? sessionManager.resume() : sessionManager.pause()
+                        } label: {
+                            Label(session.isPaused ? "Продолжить" : "Пауза",
+                                  systemImage: session.isPaused ? "play.fill" : "pause.fill")
+                        }
+                        .buttonStyle(.goblinSecondary)
 
-                Spacer()
+                        Button {
+                            showFinishConfirm = true
+                        } label: {
+                            Label("Завершить", systemImage: "checkmark.circle")
+                        }
+                        .buttonStyle(.goblinSecondary)
+                    }
+
+                    Button("Отменить сессию", role: .destructive) {
+                        showCancelConfirm = true
+                    }
+                    .font(.lora(13))
+                    .foregroundStyle(AppTheme.rustDeep)
+                    .padding(.top, 2)
+                }
+                .parchmentCard(padding: 24)
+                .padding(.horizontal, 24)
             }
+            Spacer(minLength: 0)
         }
         .sheet(isPresented: $showQuickCheckIn) {
             QuickCheckInSheet(sessionID: session.id)
         }
-        .confirmationDialog("Завершить сессию?", isPresented: $showFinishConfirm, titleVisibility: .visible) {
-            Button("Завершить") { sessionManager.finish() }
-            Button("Отмена", role: .cancel) {}
-        }
-        .confirmationDialog(
-            "Отменить сессию без сохранения?",
+        .goblinConfirmation(
+            isPresented: $showFinishConfirm,
+            title: "Завершить сессию?",
+            confirmTitle: "Завершить",
+            onConfirm: { sessionManager.finish() }
+        )
+        .goblinConfirmation(
             isPresented: $showCancelConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Отменить сессию", role: .destructive) { sessionManager.cancel() }
-            Button("Назад", role: .cancel) {}
-        }
+            title: "Отменить сессию?",
+            message: "Сессия не будет сохранена",
+            confirmTitle: "Отменить сессию",
+            isDestructive: true,
+            onConfirm: { sessionManager.cancel() }
+        )
     }
 
     private func formattedElapsed(_ interval: TimeInterval) -> String {

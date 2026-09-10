@@ -28,6 +28,17 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// Asset name of this mood's mushroom character illustration.
+    var imageName: String {
+        switch self {
+        case .veryGood: return "MoodVeryGood"
+        case .good: return "MoodGood"
+        case .neutral: return "MoodNeutral"
+        case .tired: return "MoodTired"
+        case .veryBad: return "MoodVeryBad"
+        }
+    }
+
     var label: String {
         switch self {
         case .veryGood: return "Очень хорошо"

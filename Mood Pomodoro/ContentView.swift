@@ -11,11 +11,14 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        if horizontalSizeClass == .regular {
-            iPadRootView()
-        } else {
-            iPhoneRootView()
+        Group {
+            if horizontalSizeClass == .regular {
+                iPadRootView()
+            } else {
+                iPhoneRootView()
+            }
         }
+        .tint(AppTheme.forest)
     }
 }
 
@@ -23,12 +26,14 @@ private struct iPhoneRootView: View {
     var body: some View {
         TabView {
             HomeView()
-                .tabItem { Label("Сегодня", systemImage: "circle.grid.2x2") }
+                .tabItem { Label("Сегодня", systemImage: "leaf.fill") }
             HistoryView()
-                .tabItem { Label("История", systemImage: "clock") }
+                .tabItem { Label("История", systemImage: "book.closed.fill") }
             AnalyticsView()
-                .tabItem { Label("Аналитика", systemImage: "chart.bar") }
+                .tabItem { Label("Аналитика", systemImage: "chart.line.uptrend.xyaxis") }
         }
+        .toolbarBackground(AppTheme.parchmentCard, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
     }
 }
 
@@ -47,9 +52,9 @@ private struct iPadRootView: View {
 
         var icon: String {
             switch self {
-            case .today: return "circle.grid.2x2"
-            case .history: return "clock"
-            case .analytics: return "chart.bar"
+            case .today: return "leaf.fill"
+            case .history: return "book.closed.fill"
+            case .analytics: return "chart.line.uptrend.xyaxis"
             }
         }
     }
@@ -59,9 +64,22 @@ private struct iPadRootView: View {
     var body: some View {
         NavigationSplitView {
             List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.icon).tag(section)
+                Label {
+                    Text(section.title).font(.lora(16))
+                } icon: {
+                    Image(systemName: section.icon)
+                }
+                .tag(section)
             }
-            .navigationTitle("Mood Pomodoro")
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.parchment)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Mood Pomodoro")
+                        .font(.lora(18, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+            }
         } detail: {
             switch selection ?? .today {
             case .today: DashboardView()

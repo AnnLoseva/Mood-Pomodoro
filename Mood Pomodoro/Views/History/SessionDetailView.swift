@@ -9,10 +9,28 @@ struct SessionDetailView: View {
     let session: FocusSession
 
     var body: some View {
-        List(session.timelineEntries) { entry in
-            TimelineRow(entry: entry)
+        ZStack {
+            ForestBackdrop()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(session.timelineEntries) { entry in
+                        TimelineRow(entry: entry)
+                    }
+                }
+                .padding(20)
+                .parchmentCard()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
+            }
         }
-        .navigationTitle(session.activity)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(session.activity)
+                    .font(.lora(17, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
+            }
+        }
     }
 }

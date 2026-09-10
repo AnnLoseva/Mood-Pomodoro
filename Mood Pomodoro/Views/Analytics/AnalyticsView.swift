@@ -23,48 +23,115 @@ struct AnalyticsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if allCheckIns.isEmpty {
-                    ContentUnavailableView(
-                        "Пока мало данных",
-                        systemImage: "chart.bar",
-                        description: Text("Аналитика появится после нескольких сессий")
-                    )
-                } else {
-                    List {
-                        Section("Распределение состояния") {
-                            Chart(moodCounts, id: \.mood) { item in
-                                BarMark(
-                                    x: .value("Настроение", item.mood.emoji),
-                                    y: .value("Количество", item.count)
-                                )
-                                .foregroundStyle(.tint)
-                            }
-                            .frame(height: 180)
-                        }
+            ZStack {
+                ForestBackdrop()
 
-                        if !topReasons.isEmpty {
-                            Section("Частые причины") {
-                                ForEach(topReasons, id: \.reason) { item in
-                                    HStack {
-                                        Text(item.reason)
-                                        Spacer()
-                                        Text("\(item.count)")
-                                            .foregroundStyle(.secondary)
+                if allCheckIns.isEmpty {
+                    VStack(spacing: 10) {
+                        MoodImage(mood: .neutral, size: 72)
+                        Text("Пока мало данных")
+                            .font(.lora(19, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                        Text("Аналитика появится после нескольких сессий")
+                            .font(.lora(14))
+                            .foregroundStyle(AppTheme.inkSoft)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(28)
+                    .parchmentCard()
+                    .padding(.horizontal, 32)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Распределение состояния")
+                                    .font(.lora(16, weight: .semibold))
+                                    .foregroundStyle(AppTheme.ink)
+                                Chart(moodCounts, id: \.mood) { item in
+                                    BarMark(
+                                        x: .value("Настроение", item.mood.rawValue),
+                                        y: .value("Количество", item.count)
+                                    )
+                                    .foregroundStyle(AppTheme.forest)
+                                    .cornerRadius(6)
+                                }
+                                .chartXAxis {
+                                    AxisMarks { value in
+                                        if let raw = value.as(String.self), let mood = Mood(rawValue: raw) {
+                                            AxisValueLabel {
+                                                MoodImage(mood: mood, size: 22)
+                                            }
+                                        }
                                     }
                                 }
+                                .chartYAxis {
+                                    AxisMarks { _ in
+                                        AxisGridLine().foregroundStyle(AppTheme.border)
+                                        AxisValueLabel().font(.lora(11)).foregroundStyle(AppTheme.inkSoft)
+                                    }
+                                }
+                                .frame(height: 180)
                             }
-                        }
+                            .padding(18)
+                            .parchmentCard()
 
-                        Section("Сводка") {
-                            LabeledContent("Сессий завершено", value: "\(finishedSessions.count)")
-                            LabeledContent("Средняя длительность", value: averageDurationText)
-                            LabeledContent("Всего check-ins", value: "\(allCheckIns.count)")
+                            if !topReasons.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Частые причины")
+                                        .font(.lora(16, weight: .semibold))
+                                        .foregroundStyle(AppTheme.ink)
+                                    ForEach(topReasons, id: \.reason) { item in
+                                        HStack {
+                                            Text(item.reason)
+                                                .font(.lora(14))
+                                                .foregroundStyle(AppTheme.ink)
+                                            Spacer()
+                                            Text("\(item.count)")
+                                                .font(.lora(14, weight: .medium))
+                                                .foregroundStyle(AppTheme.inkSoft)
+                                        }
+                                    }
+                                }
+                                .padding(18)
+                                .parchmentCard()
+                            }
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Сводка")
+                                    .font(.lora(16, weight: .semibold))
+                                    .foregroundStyle(AppTheme.ink)
+                                summaryRow("Сессий завершено", "\(finishedSessions.count)")
+                                summaryRow("Средняя длительность", averageDurationText)
+                                summaryRow("Всего check-ins", "\(allCheckIns.count)")
+                            }
+                            .padding(18)
+                            .parchmentCard()
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 24)
                     }
                 }
             }
-            .navigationTitle("Аналитика")
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Аналитика")
+                        .font(.lora(17, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+            }
+        }
+    }
+
+    private func summaryRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.lora(14))
+                .foregroundStyle(AppTheme.ink)
+            Spacer()
+            Text(value)
+                .font(.lora(14, weight: .medium))
+                .foregroundStyle(AppTheme.inkSoft)
         }
     }
 

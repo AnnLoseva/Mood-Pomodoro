@@ -95,6 +95,16 @@ final class SessionManager {
         try? context.save()
     }
 
+    /// Fills in the reason on a check-in that was created mood-only from a
+    /// notification action, e.g. when the user opens the app from the
+    /// "Почему так?" follow-up instead of answering it from the lock screen.
+    func updateReason(_ reason: String?, for checkInID: UUID) {
+        let descriptor = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.id == checkInID })
+        guard let checkIn = try? context.fetch(descriptor).first else { return }
+        checkIn.reason = reason
+        try? context.save()
+    }
+
     func session(withID id: UUID) -> FocusSession? {
         if activeSession?.id == id { return activeSession }
         let descriptor = FetchDescriptor<FocusSession>(predicate: #Predicate { $0.id == id })

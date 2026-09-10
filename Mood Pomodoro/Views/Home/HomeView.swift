@@ -10,15 +10,25 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let session = sessionManager.activeSession {
-                    ActiveSessionView(session: session)
-                } else {
-                    NewSessionView()
+            ZStack {
+                ForestBackdrop()
+
+                Group {
+                    if let session = sessionManager.activeSession {
+                        ActiveSessionView(session: session)
+                    } else {
+                        NewSessionView()
+                    }
                 }
             }
-            .navigationTitle("Mood Pomodoro")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Mood Pomodoro")
+                        .font(.lora(17, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+            }
         }
     }
 }

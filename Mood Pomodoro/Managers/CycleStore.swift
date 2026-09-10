@@ -34,13 +34,41 @@ final class CycleStore {
 
     /// Records an event, replacing any existing one of the same kind on that
     /// day — marking "начало" twice on one date is a correction, not a second
-    /// cycle.
+    /// cycle. "Начало" and "продолжается" replace each other too: a day is
+    /// one or the other.
     func log(_ kind: CycleEventKind, on date: Date, note: String? = nil, calendar: Calendar = .current) {
         let day = calendar.startOfDay(for: date)
-        for existing in entries where existing.kind == kind && calendar.isDate(existing.date, inSameDayAs: day) {
+        let replaces: Set<CycleEventKind> = kind == .periodEnd ? [.periodEnd] : [.periodStart, .periodDay]
+        for existing in entries where replaces.contains(existing.kind) && calendar.isDate(existing.date, inSameDayAs: day) {
             context.delete(existing)
         }
         context.insert(CycleEntry(date: day, kind: kind, note: note, calendar: calendar))
+        try? context.save()
+    }
+
+    /// Marks a run of days at once — "это было с 7 по 10". The first day is
+    /// either the start of a period or a continuation of one already
+    /// recorded; every later day is a continuation. Nothing past `last` is
+    /// assumed.
+    func logPeriod(
+        from first: Date,
+        through last: Date,
+        firstDayIsStart: Bool,
+        calendar: Calendar = .current
+    ) {
+        let start = calendar.startOfDay(for: min(first, last))
+        let end = calendar.startOfDay(for: max(first, last))
+        var day = start
+        while day <= end {
+            let kind: CycleEventKind = (day == start && firstDayIsStart) ? .periodStart : .periodDay
+            for existing in entries where calendar.isDate(existing.date, inSameDayAs: day)
+                && (existing.kind == .periodStart || existing.kind == .periodDay) {
+                context.delete(existing)
+            }
+            context.insert(CycleEntry(date: day, kind: kind, calendar: calendar))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
         try? context.save()
     }
 

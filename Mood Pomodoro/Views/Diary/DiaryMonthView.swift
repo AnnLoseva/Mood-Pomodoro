@@ -16,8 +16,13 @@ struct DiaryMonthView: View {
     let onSelectDay: (Date) -> Void
 
     var body: some View {
-        if summary.isEmpty {
-            emptyCard
+        // The calendar stays even in an empty month: it's also how the user
+        // gets to a past day to fill in something she forgot.
+        if summary.isEmpty && summary.supportStats.isEmpty {
+            VStack(spacing: 16) {
+                calendarCard
+                emptyCard
+            }
         } else if isWide {
             VStack(spacing: 16) {
                 HStack(alignment: .top, spacing: 16) {
@@ -28,6 +33,7 @@ struct DiaryMonthView: View {
                     studyCard.frame(maxWidth: .infinity)
                     cycleCard.frame(maxWidth: .infinity)
                 }
+                if !summary.supportStats.isEmpty { supportCard }
                 factorsCard
             }
         } else {
@@ -35,6 +41,7 @@ struct DiaryMonthView: View {
                 calendarCard
                 moodCard
                 studyCard
+                if !summary.supportStats.isEmpty { supportCard }
                 factorsCard
                 cycleCard
             }
@@ -47,7 +54,7 @@ struct DiaryMonthView: View {
             Text("В этом месяце пока пусто")
                 .font(.lora(17, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Text("Картина месяца соберётся сама из check-in'ов и сессий.")
+            Text("Картина месяца соберётся сама из check-in'ов и сессий. Забытое можно добавить задним числом — нажми на день.")
                 .font(.lora(13))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)
@@ -58,8 +65,48 @@ struct DiaryMonthView: View {
     }
 
     private var calendarCard: some View {
-        DiaryCard(title: "Календарь") {
-            MonthCalendarGrid(days: summary.days, onSelectDay: onSelectDay)
+        DiaryCard(title: "Календарь", subtitle: "Цвет — среднее настроение дня") {
+            VStack(alignment: .leading, spacing: 14) {
+                MonthCalendarGrid(days: summary.days, onSelectDay: onSelectDay)
+                MoodColorLegend()
+            }
+        }
+    }
+
+    private var supportCard: some View {
+        DiaryCard(title: "💊 Ежедневная поддержка") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(summary.supportStats) { stat in
+                    HStack(spacing: 10) {
+                        Text(stat.status.glyph)
+                            .font(.lora(15, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(stat.status.label)
+                                .font(.lora(14))
+                                .foregroundStyle(AppTheme.ink)
+                            Text("\(stat.dayCount) дн.")
+                                .font(.lora(12))
+                                .foregroundStyle(AppTheme.inkSoft)
+                        }
+                        Spacer(minLength: 8)
+                        if stat.hasEnoughData, let average = stat.averageMood {
+                            Circle()
+                                .fill(MoodColorScale.color(for: average))
+                                .frame(width: 12, height: 12)
+                            Text(String(format: "%.1f", average))
+                                .font(.lora(14, weight: .semibold))
+                                .foregroundStyle(AppTheme.forest)
+                        } else {
+                            Text(stat.checkInCount == 0 ? "нет check-in" : "\(stat.checkInCount) check-in")
+                                .font(.lora(12))
+                                .foregroundStyle(AppTheme.inkSoft)
+                        }
+                    }
+                }
+                DiaryNote(text: "Среднее настроение в дни с такой отметкой — наблюдение по твоим данным, не вывод о действии поддержки. Дни без отметки сюда не входят.")
+            }
         }
     }
 
@@ -244,8 +291,10 @@ struct DiaryMonthView: View {
     }
 }
 
-/// Month grid: one cell per day, showing the day's mushroom when something
-/// was recorded. Empty days stay quietly empty — no gaps to "fill in".
+/// Month grid: one colored cell per day, the color being the day's average
+/// mood on the green→red scale — dense enough to read a whole month at a
+/// glance, where tiny illustrations weren't. A day without mood data is
+/// parchment with an outline: absence of data is never shown as a mood.
 struct MonthCalendarGrid: View {
     let days: [DayMoodSummary]
     let onSelectDay: (Date) -> Void
@@ -262,9 +311,9 @@ struct MonthCalendarGrid: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 7), spacing: 5) {
                 ForEach(0..<leadingBlanks, id: \.self) { _ in
-                    Color.clear.frame(height: 44)
+                    Color.clear.frame(height: 40)
                 }
                 ForEach(days) { day in
                     Button {
@@ -279,29 +328,38 @@ struct MonthCalendarGrid: View {
     }
 
     private func cell(for day: DayMoodSummary) -> some View {
-        VStack(spacing: 1) {
-            Text("\(calendar.component(.day, from: day.date))")
-                .font(.lora(11))
-                .foregroundStyle(AppTheme.inkSoft)
-            if let mood = day.representativeMood {
-                MoodImage(mood: mood, size: 22)
-            } else {
-                Circle()
-                    .fill(AppTheme.border.opacity(0.35))
-                    .frame(width: 6, height: 6)
-                    .frame(height: 22)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 44)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(calendar.isDateInToday(day.date) ? AppTheme.forest.opacity(0.14) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(calendar.isDateInToday(day.date) ? AppTheme.forest.opacity(0.5) : Color.clear, lineWidth: 1.25)
-        )
+        let isToday = calendar.isDateInToday(day.date)
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        return Text("\(calendar.component(.day, from: day.date))")
+            .font(.lora(13, weight: day.hasMoodData ? .semibold : .regular).monospacedDigit())
+            .foregroundStyle(numberColor(for: day))
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .background(shape.fill(fill(for: day)))
+            .overlay(
+                shape.stroke(
+                    isToday ? AppTheme.ink.opacity(0.8) : (day.hasMoodData ? Color.clear : AppTheme.border),
+                    lineWidth: isToday ? 2 : 1
+                )
+            )
+            .contentShape(shape)
+            .accessibilityLabel(accessibilityText(for: day))
+    }
+
+    private func fill(for day: DayMoodSummary) -> Color {
+        guard let average = day.averageMood else { return AppTheme.parchment.opacity(0.35) }
+        return MoodColorScale.color(for: average)
+    }
+
+    private func numberColor(for day: DayMoodSummary) -> Color {
+        guard let average = day.averageMood else { return AppTheme.inkSoft }
+        return MoodColorScale.prefersLightText(for: average) ? AppTheme.parchmentCard : AppTheme.ink
+    }
+
+    private func accessibilityText(for day: DayMoodSummary) -> String {
+        let date = DateFormatting.fullDate(day.date)
+        guard let average = day.averageMood else { return "\(date), нет данных" }
+        return "\(date), \(Mood.nearest(to: average).label), \(String(format: "%.1f", average)), \(day.checkInCount) check-in"
     }
 
     /// Weekday headers rotated to the user's locale (Mon-first in Russian).
@@ -316,5 +374,32 @@ struct MonthCalendarGrid: View {
         guard let first = days.first?.date else { return 0 }
         let weekday = calendar.component(.weekday, from: first)
         return (weekday - calendar.firstWeekday + 7) % 7
+    }
+}
+
+/// Swatches for the calendar's scale, plus the "нет данных" outline.
+struct MoodColorLegend: View {
+    var body: some View {
+        FlowLayout(spacing: 10) {
+            ForEach(MoodColorScale.legend, id: \.mood) { item in
+                swatch(label: item.mood.label) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(item.color)
+                }
+            }
+            swatch(label: "Нет данных") {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(AppTheme.parchment.opacity(0.35))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+            }
+        }
+    }
+
+    private func swatch<Shape: View>(label: String, @ViewBuilder shape: () -> Shape) -> some View {
+        HStack(spacing: 5) {
+            shape().frame(width: 14, height: 14)
+            Text(label)
+                .font(.lora(11))
+                .foregroundStyle(AppTheme.inkSoft)
+        }
     }
 }

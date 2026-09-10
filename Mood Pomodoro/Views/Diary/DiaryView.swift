@@ -6,10 +6,13 @@
 import SwiftUI
 import SwiftData
 
-/// The Дневник tab: one day or one month, assembled from records the app
-/// already has. Everything on screen is derived — the user is never asked to
-/// re-enter an activity a session already knows about, or a mood already
-/// answered in a check-in.
+/// The Дневник tab: one day or one month. Most of it is derived from records
+/// the app already has; "+ Добавить" covers the rest — including anything
+/// the user remembers later, which lands on the day it actually happened.
+///
+/// Everything is read through `@Query`, so an entry added or edited here
+/// (or synced from the other device) re-derives the day, the month and the
+/// calendar colors on its own.
 ///
 /// Shared by iPhone and iPad (like История and Аналитика); the month layout
 /// spreads into two columns at regular width instead of getting its own view.
@@ -26,11 +29,14 @@ struct DiaryView: View {
     @Query private var checkIns: [CheckIn]
     @Query(sort: \FactorCategory.sortOrder) private var categories: [FactorCategory]
     @Query(sort: \CycleEntry.date, order: .reverse) private var cycleEntries: [CycleEntry]
+    @Query private var supportEntries: [SupportEntry]
+    @Query private var notes: [JournalNote]
+    @Query private var conditionEvents: [ConditionEvent]
 
     @State private var mode: Mode = .day
     @State private var selectedDate: Date = .now
     @State private var showQuickCheckIn = false
-    @State private var showCycleSheet = false
+    @State private var entrySheet: DiaryEntrySheet?
 
     private let calendar = Calendar.current
 
@@ -42,6 +48,9 @@ struct DiaryView: View {
             sessions: sessions,
             checkIns: checkIns,
             cycleEntries: cycleEntries,
+            supportEntries: supportEntries,
+            notes: notes,
+            diaryFactors: conditionEvents,
             calendar: calendar
         )
     }
@@ -53,6 +62,7 @@ struct DiaryView: View {
             checkIns: checkIns,
             categories: categories,
             cycleEntries: cycleEntries,
+            supportEntries: supportEntries,
             calendar: calendar
         )
     }
@@ -74,13 +84,15 @@ struct DiaryView: View {
                         ScrollView {
                             VStack(spacing: 16) {
                                 stepper
+                                addMenu
                                 switch mode {
                                 case .day:
                                     DiaryDayView(
                                         summary: dailySummary,
                                         isToday: isToday,
-                                        onAddMood: { showQuickCheckIn = true },
-                                        onEditCycle: { showCycleSheet = true }
+                                        onQuickMood: { showQuickCheckIn = true },
+                                        onAdd: { entrySheet = $0 },
+                                        onEdit: { entrySheet = DiaryEntrySheet(editing: $0) }
                                     )
                                 case .month:
                                     DiaryMonthView(summary: monthlySummary, isWide: isWide) { day in
@@ -115,8 +127,8 @@ struct DiaryView: View {
             .sheet(isPresented: $showQuickCheckIn) {
                 QuickCheckInSheet(sessionID: sessionManager.activeSession?.id)
             }
-            .sheet(isPresented: $showCycleSheet) {
-                CycleLogSheet(date: selectedDate)
+            .sheet(item: $entrySheet) { sheet in
+                DiaryEntrySheetView(sheet: sheet, day: selectedDate)
             }
         }
     }
@@ -141,6 +153,28 @@ struct DiaryView: View {
         }
         .padding(.top, 12)
         .padding(.bottom, 4)
+    }
+
+    /// Visible but quiet: one capsule under the date. Every form it opens
+    /// starts on the day being viewed and lets the date be changed.
+    private var addMenu: some View {
+        Menu {
+            Button("🌿 Деятельность") { entrySheet = .activity(editing: nil) }
+            Button("🙂 Настроение") { entrySheet = .mood(editing: nil) }
+            Button("💊 Поддержка") { entrySheet = .support }
+            Button("🌸 Цикл") { entrySheet = .cycle }
+            Button("☕ Фактор") { entrySheet = .factor(editing: nil) }
+            Button("📝 Заметку") { entrySheet = .note(editing: nil) }
+        } label: {
+            Label("Добавить", systemImage: "plus")
+                .font(.lora(14, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(AppTheme.parchmentCard))
+                .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1.25))
+        }
+        .accessibilityLabel("Добавить запись")
     }
 
     private var stepper: some View {

@@ -242,4 +242,204 @@ struct DiaryAnalyticsTests {
         let checkIns = (1...10).map { checkIn(.good, at: date($0), session: nil) }
         #expect(AnalyticsService.cycleMoodBuckets(checkIns: checkIns, entries: [], calendar: calendar).isEmpty)
     }
+
+    // MARK: - Backdated entries (event date ≠ created date)
+
+    private func manualSession(activity: String, start: Date, end: Date, createdAt: Date) -> FocusSession {
+        let session = FocusSession(activity: activity, startDate: start, checkInIntervalMinutes: 10)
+        session.origin = .manual
+        session.state = .completed
+        session.endDate = end
+        session.createdAt = createdAt
+        let segment = SessionSegment(type: .work, startDate: start, endDate: end)
+        segment.session = session
+        session.segments = [segment]
+        return session
+    }
+
+    @Test func createdAtIsNotTheEventDate() {
+        let checkIn = CheckIn(timestamp: date(9, 22, 30), mood: .tired)
+        #expect(checkIn.timestamp == date(9, 22, 30))
+        #expect(checkIn.createdAt > checkIn.timestamp)
+    }
+
+    /// Scenario 1: on the 10th at 20:00, add "9th, 14:00–16:00, programming".
+    @Test func backdatedActivityLandsOnTheDayItHappened() {
+        let entry = manualSession(
+            activity: "Программирование",
+            start: date(9, 14),
+            end: date(9, 16),
+            createdAt: date(10, 20)
+        )
+
+        let ninth = AnalyticsService.dailySummary(date: date(9), sessions: [entry], checkIns: [], calendar: calendar)
+        let tenth = AnalyticsService.dailySummary(date: date(10), sessions: [entry], checkIns: [], calendar: calendar)
+        let month = AnalyticsService.monthlySummary(month: date(9), sessions: [entry], checkIns: [], calendar: calendar)
+
+        #expect(ninth.totalActiveDuration == 2 * 60 * 60)
+        #expect(ninth.activities.first?.activityName == "Программирование")
+        #expect(tenth.activities.isEmpty)
+        #expect(month.totalActiveDuration == 2 * 60 * 60)
+        // Its start row sits at 14:00 and opens the edit form.
+        let start = ninth.timelineEvents.first { $0.kind == .start }
+        #expect(start?.timestamp == date(9, 14))
+        #expect(start?.target == .session(entry.id))
+    }
+
+    /// Scenario 2: on the 10th, add "8th, 22:30, 🥲" — the 8th's average
+    /// and its calendar color both change.
+    @Test func backdatedMoodRecolorsItsDay() {
+        let morning = checkIn(.good, at: date(8, 10))
+        let before = AnalyticsService.monthlySummary(month: date(8), sessions: [], checkIns: [morning], calendar: calendar)
+
+        let late = checkIn(.tired, at: date(8, 22, 30))
+        let after = AnalyticsService.monthlySummary(
+            month: date(8),
+            sessions: [],
+            checkIns: [morning, late],
+            calendar: calendar
+        )
+
+        let eighthBefore = before.days.first { calendar.component(.day, from: $0.date) == 8 }
+        let eighthAfter = after.days.first { calendar.component(.day, from: $0.date) == 8 }
+        #expect(eighthBefore?.averageMood == 4)
+        #expect(eighthAfter?.averageMood == 3)
+        #expect(eighthAfter?.checkInCount == 2)
+        #expect(MoodColorScale.color(for: 4) != MoodColorScale.color(for: 3))
+        // Nothing leaked onto the day it was written.
+        #expect(after.days.first { calendar.component(.day, from: $0.date) == 10 }?.averageMood == nil)
+    }
+
+    /// Scenario 3: "8th — 💊 принято · 09:15", and unmarked stays unmarked.
+    @Test func supportMarkIsShownOnItsDayWithItsTime() {
+        let entry = SupportEntry(day: date(8), status: .taken, time: date(8, 9, 15), calendar: calendar)
+
+        let eighth = AnalyticsService.dailySummary(
+            date: date(8), sessions: [], checkIns: [], supportEntries: [entry], calendar: calendar
+        )
+        let seventh = AnalyticsService.dailySummary(
+            date: date(7), sessions: [], checkIns: [], supportEntries: [entry], calendar: calendar
+        )
+
+        #expect(eighth.support?.status == .taken)
+        #expect(eighth.support?.time == date(8, 9, 15))
+        #expect(eighth.timelineEvents.contains { $0.kind == .support && $0.timestamp == date(8, 9, 15) })
+        // No mark is "не отмечено", never "не принято".
+        #expect(seventh.support == nil)
+    }
+
+    @Test func supportMarkWithoutATimeStaysOffTheTimeline() {
+        let entry = SupportEntry(day: date(8), status: .unknown, calendar: calendar)
+        let summary = AnalyticsService.dailySummary(
+            date: date(8), sessions: [], checkIns: [], supportEntries: [entry], calendar: calendar
+        )
+        #expect(summary.support?.status == .unknown)
+        #expect(summary.support?.time == nil)
+        #expect(!summary.timelineEvents.contains { $0.kind == .support })
+    }
+
+    @Test func conflictingSupportMarksResolveToTheLatestEdit() {
+        let older = SupportEntry(day: date(8), status: .notTaken, calendar: calendar)
+        older.updatedAt = date(8, 10)
+        let newer = SupportEntry(day: date(8), status: .taken, calendar: calendar)
+        newer.updatedAt = date(9, 10)
+
+        let winner = AnalyticsService.supportEntry(on: date(8), entries: [older, newer], calendar: calendar)
+        #expect(winner?.status == .taken)
+    }
+
+    @Test func supportMoodStatsLeaveUnmarkedDaysOut() {
+        let entries = [
+            SupportEntry(day: date(1), status: .taken, calendar: calendar),
+            SupportEntry(day: date(2), status: .notTaken, calendar: calendar)
+        ]
+        let checkIns = [
+            checkIn(.good, at: date(1, 10)),
+            checkIn(.tired, at: date(2, 10)),
+            checkIn(.veryBad, at: date(3, 10)) // unmarked day
+        ]
+        let stats = AnalyticsService.monthlySummary(
+            month: date(1), sessions: [], checkIns: checkIns, supportEntries: entries, calendar: calendar
+        ).supportStats
+
+        #expect(stats.map(\.status) == [.taken, .notTaken])
+        #expect(stats.first { $0.status == .taken }?.averageMood == 4)
+        #expect(stats.reduce(0) { $0 + $1.checkInCount } == 2)
+        // One check-in is far below the floor — no average should be shown.
+        #expect(stats.allSatisfy { !$0.hasEnoughData })
+    }
+
+    /// Scenario 4: on the 10th, mark 7th as the start and 8–10 as continuing.
+    @Test func backfilledPeriodCountsCycleDaysFromTheRecordedStart() {
+        let entries = [
+            CycleEntry(date: date(7), kind: .periodStart, calendar: calendar),
+            CycleEntry(date: date(8), kind: .periodDay, calendar: calendar),
+            CycleEntry(date: date(9), kind: .periodDay, calendar: calendar),
+            CycleEntry(date: date(10), kind: .periodDay, calendar: calendar)
+        ]
+
+        for (day, expected) in [(7, 1), (8, 2), (9, 3), (10, 4)] {
+            #expect(AnalyticsService.cycleDay(for: date(day), entries: entries, calendar: calendar) == expected)
+            #expect(AnalyticsService.isPeriodDay(date(day), entries: entries, calendar: calendar))
+        }
+        // No end was recorded, so the app doesn't extend the period itself.
+        #expect(!AnalyticsService.isPeriodDay(date(11), entries: entries, calendar: calendar))
+    }
+
+    @Test func periodCoversTheDaysBetweenARecordedStartAndEnd() {
+        let entries = [
+            CycleEntry(date: date(7), kind: .periodStart, calendar: calendar),
+            CycleEntry(date: date(11), kind: .periodEnd, calendar: calendar)
+        ]
+        #expect(AnalyticsService.isPeriodDay(date(9), entries: entries, calendar: calendar))
+        #expect(AnalyticsService.isPeriodDay(date(11), entries: entries, calendar: calendar))
+        #expect(!AnalyticsService.isPeriodDay(date(12), entries: entries, calendar: calendar))
+        #expect(!AnalyticsService.isPeriodDay(date(6), entries: entries, calendar: calendar))
+    }
+
+    /// Scenario 5: 4.8 / 3.9 → green side, 2.8 → yellow-orange, 1.4 → red,
+    /// and an empty day has no color at all.
+    @Test func monthColorScaleRunsFromGreenToRed() {
+        func isGreen(_ value: Double) -> Bool {
+            let (red, green, _) = MoodColorScale.components(for: value)
+            return green > red
+        }
+        #expect(isGreen(4.8))
+        #expect(isGreen(3.9))
+        #expect(!isGreen(2.8))
+        #expect(!isGreen(1.4))
+
+        let (red14, green14, _) = MoodColorScale.components(for: 1.4)
+        let (red28, green28, _) = MoodColorScale.components(for: 2.8)
+        #expect(red14 - green14 > red28 - green28) // 1.4 is redder than 2.8
+
+        let summary = AnalyticsService.monthlySummary(
+            month: date(1),
+            sessions: [],
+            checkIns: [checkIn(.veryGood, at: date(1, 10))],
+            calendar: calendar
+        )
+        let fifth = summary.days.first { calendar.component(.day, from: $0.date) == 5 }
+        #expect(fifth?.hasMoodData == false)
+    }
+
+    @Test func diaryNotesAndStandaloneFactorsJoinTheirDay() {
+        let note = JournalNote(timestamp: date(9, 18), text: "Гуляла в лесу")
+        let category = FactorCategory(name: "Напиток", icon: "☕")
+        let option = FactorOption(name: "Пуэр", icon: "🧉")
+        let factor = ConditionEvent(timestamp: date(9, 15), category: category, option: option)
+
+        let summary = AnalyticsService.dailySummary(
+            date: date(9),
+            sessions: [],
+            checkIns: [],
+            notes: [note],
+            diaryFactors: [factor],
+            calendar: calendar
+        )
+
+        #expect(!summary.isEmpty)
+        #expect(summary.conditions.map(\.optionName) == ["Пуэр"])
+        #expect(summary.timelineEvents.map(\.target) == [.factor(factor.id), .note(note.id)])
+    }
 }

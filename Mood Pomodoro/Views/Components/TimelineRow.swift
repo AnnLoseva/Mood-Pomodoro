@@ -14,6 +14,17 @@ enum TimelineEventKind: String {
     case resume
     case conditionChanged
     case end
+    case support
+    case note
+}
+
+/// Which record a diary timeline row opens for editing, if any.
+enum DiaryEditTarget: Hashable {
+    case session(UUID)
+    case checkIn(UUID)
+    case support(Date)
+    case factor(UUID)
+    case note(UUID)
 }
 
 struct TimelineEvent: Identifiable {
@@ -23,6 +34,8 @@ struct TimelineEvent: Identifiable {
     let title: String
     let subtitle: String?
     let mood: Mood?
+    /// Set only by the diary; nil everywhere a row is read-only.
+    var target: DiaryEditTarget? = nil
 }
 
 extension FocusSession {
@@ -171,6 +184,8 @@ struct TimelineRow: View {
         case .resume: return "▶️"
         case .conditionChanged: return "•"
         case .end: return "⏹"
+        case .support: return "💊"
+        case .note: return "📝"
         }
     }
 }

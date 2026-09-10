@@ -6,6 +6,14 @@
 import Foundation
 import SwiftData
 
+/// How a session came to exist. A `.manual` session was typed in after the
+/// fact ("я с 10 до 12 училась") — it has one closed work segment, never
+/// schedules check-ins, and is the only kind whose times the user edits.
+enum SessionOrigin: String, Codable, Sendable {
+    case timer
+    case manual
+}
+
 @Model
 final class FocusSession {
     /// CloudKit does not allow `@Attribute(.unique)`; identity is still `id`.
@@ -15,6 +23,11 @@ final class FocusSession {
     var endDate: Date?
     var checkInIntervalMinutes: Int = 10
     var stateRaw: String = SessionState.active.rawValue
+    var originRaw: String = SessionOrigin.timer.rawValue
+    var note: String?
+    /// When the record was written. Equal to `startDate` for timer sessions;
+    /// for a backdated one it is the moment the user remembered, while
+    /// `startDate` stays the moment the activity actually began.
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
 
@@ -69,6 +82,13 @@ final class FocusSession {
     /// the app (paused sessions were never treated as finished).
     var isActive: Bool { state == .active || state == .paused }
     var isPaused: Bool { state == .paused }
+
+    var origin: SessionOrigin {
+        get { SessionOrigin(rawValue: originRaw) ?? .timer }
+        set { originRaw = newValue.rawValue }
+    }
+
+    var isManualEntry: Bool { origin == .manual }
 
     var checkInInterval: TimeInterval { TimeInterval(checkInIntervalMinutes * 60) }
 

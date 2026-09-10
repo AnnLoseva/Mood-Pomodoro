@@ -102,5 +102,6 @@ private struct iPadRootView: View {
         .environment(SessionManager(container: container))
         .environment(ReasonsStore.shared)
         .environment(CycleStore(container: container))
+        .environment(DiaryEntryStore(container: container))
         .modelContainer(container)
 }

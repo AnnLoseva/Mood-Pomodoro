@@ -47,7 +47,11 @@ final class CheckIn {
     var occurrenceID: String?
     var scheduledAt: Date?
     var originRaw: String = CheckInOrigin.manual.rawValue
+    /// When the record was written — *not* when the mood happened. A mood
+    /// logged tonight about this morning has `timestamp` = morning,
+    /// `createdAt` = tonight. Analytics only ever reads `timestamp`.
     var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
 
     init(
         id: UUID = UUID(),
@@ -71,7 +75,8 @@ final class CheckIn {
         self.occurrenceID = occurrenceID
         self.scheduledAt = scheduledAt
         self.originRaw = origin.rawValue
-        self.createdAt = timestamp
+        self.createdAt = .now
+        self.updatedAt = .now
     }
 
     var origin: CheckInOrigin {

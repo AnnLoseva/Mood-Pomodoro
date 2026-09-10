@@ -17,6 +17,10 @@ import Foundation
 /// * A **session's time** is attributed to the day it *started* — the same
 ///   grouping `HistoryView` already uses, so a session and its study time
 ///   never appear split across two days.
+///
+/// And one rule underneath both: every record is placed by when the event
+/// *happened* (`timestamp`, `startDate`, `day`), never by `createdAt`. An
+/// entry written tonight about yesterday afternoon is yesterday afternoon.
 extension AnalyticsService {
 
     // MARK: - Cycle
@@ -33,6 +37,60 @@ extension AnalyticsService {
         guard let lastStart = starts.last(where: { $0 <= day }) else { return nil }
         let elapsed = calendar.dateComponents([.day], from: lastStart, to: day).day ?? 0
         return elapsed + 1
+    }
+
+    /// Whether `date` is a menstruation day by what was recorded: either the
+    /// day itself carries a mark, or it lies between a start and the end
+    /// recorded after it. A start with no end yet covers only the days the
+    /// user actually marked — the app doesn't assume how long it lasted.
+    static func isPeriodDay(_ date: Date, entries: [CycleEntry], calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        if entries.contains(where: { calendar.isDate($0.date, inSameDayAs: day) }) { return true }
+        let sorted = entries.sorted { $0.date < $1.date }
+        guard let lastStart = sorted.last(where: { $0.kind == .periodStart && $0.date <= day }) else { return false }
+        return sorted.contains { entry in
+            entry.kind == .periodEnd && entry.date > day && entry.date > lastStart.date
+                && !sorted.contains { $0.kind == .periodStart && $0.date > lastStart.date && $0.date <= entry.date }
+        }
+    }
+
+    // MARK: - Daily support
+
+    /// The one mark for `day`. If sync left two (both devices marked the
+    /// same day offline), the most recently edited wins.
+    static func supportEntry(on day: Date, entries: [SupportEntry], calendar: Calendar = .current) -> SupportEntry? {
+        entries
+            .filter { $0.trackerKey == SupportEntry.defaultTrackerKey && calendar.isDate($0.day, inSameDayAs: day) }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
+    /// Mood on the days of `interval` grouped by that day's support mark.
+    /// Unmarked days are left out entirely — they are not "не принято".
+    static func supportMoodStatistics(
+        checkIns: [CheckIn],
+        supportEntries: [SupportEntry],
+        in interval: DateInterval,
+        calendar: Calendar = .current
+    ) -> [SupportMoodStat] {
+        var statusByDay: [Date: SupportStatus] = [:]
+        for entry in supportEntries where interval.contains(entry.day) {
+            let day = calendar.startOfDay(for: entry.day)
+            if let winner = supportEntry(on: day, entries: supportEntries, calendar: calendar) {
+                statusByDay[day] = winner.status
+            }
+        }
+        guard !statusByDay.isEmpty else { return [] }
+        return SupportStatus.allCases.compactMap { status in
+            let days = Set(statusByDay.filter { $0.value == status }.keys)
+            guard !days.isEmpty else { return nil }
+            let matching = checkIns.filter { days.contains(calendar.startOfDay(for: $0.timestamp)) }
+            return SupportMoodStat(
+                status: status,
+                dayCount: days.count,
+                checkInCount: matching.count,
+                averageMood: averageMood(of: matching)
+            )
+        }
     }
 
     // MARK: - Shared mood aggregation
@@ -57,11 +115,21 @@ extension AnalyticsService {
         sessions: [FocusSession],
         checkIns: [CheckIn],
         cycleEntries: [CycleEntry] = [],
+        supportEntries: [SupportEntry] = [],
+        notes: [JournalNote] = [],
+        diaryFactors: [ConditionEvent] = [],
         calendar: Calendar = .current
     ) -> DailySummary {
         let dayCheckIns = checkIns
             .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
             .sorted { $0.timestamp < $1.timestamp }
+        let dayNotes = notes
+            .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
+            .sorted { $0.timestamp < $1.timestamp }
+        let dayFactors = diaryFactors
+            .filter { $0.session == nil && calendar.isDate($0.timestamp, inSameDayAs: date) }
+            .sorted { $0.timestamp < $1.timestamp }
+        let support = supportEntry(on: date, entries: supportEntries, calendar: calendar)
 
         // Time is attributed by start day; the timeline additionally shows
         // sessions that merely *overlap* the day, so a session running past
@@ -75,12 +143,33 @@ extension AnalyticsService {
 
         var events = overlapping
             .flatMap { session in
-                session.timelineEvents.map { labelled($0, activity: session.activity) }
+                session.timelineEvents.map { labelled($0, session: session) }
             }
             .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
         events.append(contentsOf: dayCheckIns.filter { $0.session == nil }.map(standaloneTimelineEvent))
+        events.append(contentsOf: dayFactors.map(factorTimelineEvent))
+        events.append(contentsOf: dayNotes.map(noteTimelineEvent))
+        if let support, let time = support.time {
+            events.append(
+                TimelineEvent(
+                    id: "support-\(support.id.uuidString)",
+                    timestamp: time,
+                    kind: .support,
+                    title: "Поддержка · \(support.status.label)",
+                    subtitle: support.note,
+                    mood: nil,
+                    target: .support(support.day)
+                )
+            )
+        }
         events.sort { $0.timestamp < $1.timestamp }
 
+        var conditions = distinctConditions(in: startedToday)
+        for entry in dayFactors.map(\.asSnapshotEntry) where !conditions.contains(where: { $0.optionID == entry.optionID }) {
+            conditions.append(entry)
+        }
+
+        let kindOrder = CycleEventKind.allCases
         return DailySummary(
             date: calendar.startOfDay(for: date),
             moodStats: moodStatistics(of: dayCheckIns),
@@ -89,11 +178,15 @@ extension AnalyticsService {
             },
             timelineEvents: events,
             activities: activityDurationStatistics(sessions: startedToday, checkIns: dayCheckIns),
-            conditions: distinctConditions(in: startedToday),
+            conditions: conditions,
             cycleDay: cycleDay(for: date, entries: cycleEntries, calendar: calendar),
             cycleEvents: cycleEntries
                 .filter { calendar.isDate($0.date, inSameDayAs: date) }
                 .map(\.kind)
+                .sorted { (kindOrder.firstIndex(of: $0) ?? 0) < (kindOrder.firstIndex(of: $1) ?? 0) },
+            isPeriodDay: isPeriodDay(date, entries: cycleEntries, calendar: calendar),
+            support: support.map { SupportDayStatus(status: $0.status, time: $0.time, note: $0.note) },
+            notes: dayNotes.map { DiaryNoteEntry(id: $0.id, timestamp: $0.timestamp, text: $0.text) }
         )
     }
 
@@ -105,6 +198,7 @@ extension AnalyticsService {
         checkIns: [CheckIn],
         categories: [FactorCategory] = [],
         cycleEntries: [CycleEntry] = [],
+        supportEntries: [SupportEntry] = [],
         calendar: Calendar = .current
     ) -> MonthlySummary {
         guard let interval = calendar.dateInterval(of: .month, for: month) else {
@@ -115,7 +209,8 @@ extension AnalyticsService {
                 moodOverTime: [],
                 activities: [],
                 factors: [],
-                cycleBuckets: []
+                cycleBuckets: [],
+                supportStats: []
             )
         }
 
@@ -145,7 +240,13 @@ extension AnalyticsService {
             },
             activities: activityDurationStatistics(sessions: monthSessions, checkIns: monthCheckIns),
             factors: categories.isEmpty ? [] : factorStatistics(categories: categories, sessions: monthSessions),
-            cycleBuckets: cycleMoodBuckets(checkIns: monthCheckIns, entries: cycleEntries, calendar: calendar)
+            cycleBuckets: cycleMoodBuckets(checkIns: monthCheckIns, entries: cycleEntries, calendar: calendar),
+            supportStats: supportMoodStatistics(
+                checkIns: monthCheckIns,
+                supportEntries: supportEntries,
+                in: interval,
+                calendar: calendar
+            )
         )
     }
 
@@ -225,16 +326,47 @@ extension AnalyticsService {
     /// started rather than just "Начало" — that's what makes the day read as
     /// "математика, потом программирование". A single session's own screen
     /// already has the activity in its title, so this only applies here.
-    private static func labelled(_ event: TimelineEvent, activity: String) -> TimelineEvent {
-        guard event.kind == .start || event.kind == .end, !activity.isEmpty else { return event }
+    ///
+    /// Also attaches what each row edits: a backdated session's start/end
+    /// open the activity form, and any check-in or condition opens its own.
+    private static func labelled(_ event: TimelineEvent, session: FocusSession) -> TimelineEvent {
+        let activity = session.activity
+        var title = event.title
+        var subtitle = event.subtitle
+        var target: DiaryEditTarget?
+        switch event.kind {
+        case .start, .end:
+            if !activity.isEmpty {
+                title = event.kind == .start ? activity : "\(activity) — завершение"
+            }
+            if session.isManualEntry {
+                target = .session(session.id)
+                if event.kind == .start {
+                    let range = DateFormatting.timeRange(from: session.startDate, to: session.endDate)
+                    subtitle = [range, session.note].compactMap { $0 }.joined(separator: " · ")
+                }
+            }
+        case .checkIn:
+            target = uuid(in: event.id, after: "checkin-").map(DiaryEditTarget.checkIn)
+        case .conditionChanged:
+            target = uuid(in: event.id, after: "condition-").map(DiaryEditTarget.factor)
+        default:
+            break
+        }
         return TimelineEvent(
             id: event.id,
             timestamp: event.timestamp,
             kind: event.kind,
-            title: event.kind == .start ? activity : "\(activity) — завершение",
-            subtitle: event.subtitle,
-            mood: event.mood
+            title: title,
+            subtitle: subtitle,
+            mood: event.mood,
+            target: target
         )
+    }
+
+    private static func uuid(in id: String, after prefix: String) -> UUID? {
+        guard id.hasPrefix(prefix) else { return nil }
+        return UUID(uuidString: String(id.dropFirst(prefix.count)))
     }
 
     private static func standaloneTimelineEvent(for checkIn: CheckIn) -> TimelineEvent {
@@ -244,7 +376,32 @@ extension AnalyticsService {
             kind: .checkIn,
             title: checkIn.reason ?? checkIn.mood.label,
             subtitle: checkIn.note,
-            mood: checkIn.mood
+            mood: checkIn.mood,
+            target: .checkIn(checkIn.id)
+        )
+    }
+
+    private static func factorTimelineEvent(for event: ConditionEvent) -> TimelineEvent {
+        TimelineEvent(
+            id: "diary-factor-\(event.id.uuidString)",
+            timestamp: event.timestamp,
+            kind: .conditionChanged,
+            title: "\(event.categoryIcon) \(event.optionName)",
+            subtitle: event.categoryName,
+            mood: nil,
+            target: .factor(event.id)
+        )
+    }
+
+    private static func noteTimelineEvent(for note: JournalNote) -> TimelineEvent {
+        TimelineEvent(
+            id: "note-\(note.id.uuidString)",
+            timestamp: note.timestamp,
+            kind: .note,
+            title: note.text,
+            subtitle: nil,
+            mood: nil,
+            target: .note(note.id)
         )
     }
 

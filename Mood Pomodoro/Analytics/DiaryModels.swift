@@ -60,6 +60,7 @@ struct DayMoodSummary: Identifiable {
 
     /// The illustration/emoji to show for this day — nil when nothing was recorded.
     var representativeMood: Mood? { averageMood.map(Mood.nearest(to:)) }
+    var hasMoodData: Bool { averageMood != nil }
 }
 
 /// One point of the "mood over the month" chart.
@@ -82,6 +83,35 @@ struct CycleMoodBucket: Identifiable {
     var hasEnoughData: Bool { checkInCount >= AnalyticsService.minimumSampleSize }
 }
 
+/// The day's support mark, as the user recorded it. Nil on `DailySummary`
+/// means "не отмечено" — a different answer from `.notTaken`.
+struct SupportDayStatus {
+    let status: SupportStatus
+    /// Nil = "в течение дня"; the user is never made to pick a time.
+    let time: Date?
+    let note: String?
+}
+
+/// Mood on days carrying one support mark, for the month. Observational
+/// only: "в дни с отметкой «принято» среднее было X" — never a claim that
+/// one caused the other.
+struct SupportMoodStat: Identifiable {
+    var id: String { status.rawValue }
+    let status: SupportStatus
+    let dayCount: Int
+    let checkInCount: Int
+    let averageMood: Double?
+
+    var hasEnoughData: Bool { checkInCount >= AnalyticsService.minimumSampleSize }
+}
+
+/// A free-text diary note placed on its day.
+struct DiaryNoteEntry: Identifiable {
+    let id: UUID
+    let timestamp: Date
+    let text: String
+}
+
 /// Everything the day screen shows, computed once per selected date.
 struct DailySummary {
     let date: Date
@@ -89,15 +119,23 @@ struct DailySummary {
     let moodPoints: [TimeOfDayMoodPoint]
     let timelineEvents: [TimelineEvent]
     let activities: [ActivityDurationStatistics]
-    /// Distinct conditions recorded during the day's sessions.
+    /// Distinct conditions recorded that day — during sessions or added to
+    /// the diary on their own.
     let conditions: [ConditionSnapshotEntry]
     let cycleDay: Int?
     let cycleEvents: [CycleEventKind]
+    /// True when the day was marked as, or falls between a recorded start
+    /// and end of, menstruation. Never inferred past what was recorded.
+    let isPeriodDay: Bool
+    let support: SupportDayStatus?
+    let notes: [DiaryNoteEntry]
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var totalBreakDuration: TimeInterval { activities.reduce(0) { $0 + $1.breakDuration } }
     var sessionCount: Int { activities.reduce(0) { $0 + $1.sessionCount } }
-    var isEmpty: Bool { moodStats.isEmpty && activities.isEmpty }
+    var isEmpty: Bool {
+        moodStats.isEmpty && activities.isEmpty && conditions.isEmpty && notes.isEmpty && support == nil
+    }
 }
 
 /// Everything the month screen shows.
@@ -111,6 +149,7 @@ struct MonthlySummary {
     let activities: [ActivityDurationStatistics]
     let factors: [FactorCategoryStatistics]
     let cycleBuckets: [CycleMoodBucket]
+    let supportStats: [SupportMoodStat]
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var sessionCount: Int { activities.reduce(0) { $0 + $1.sessionCount } }

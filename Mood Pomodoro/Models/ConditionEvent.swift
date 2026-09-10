@@ -25,6 +25,9 @@ final class ConditionEvent {
     var optionName: String = ""
     var optionIconImageName: String?
     var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
+    /// Nil for a factor added straight to the diary ("в 15:00 пила пуэр")
+    /// rather than during a session.
     var session: FocusSession?
 
     init(
@@ -42,7 +45,8 @@ final class ConditionEvent {
         self.optionID = option.id
         self.optionName = option.name
         self.optionIconImageName = option.iconImageName
-        self.createdAt = timestamp
+        self.createdAt = .now
+        self.updatedAt = .now
     }
 
     var asSnapshotEntry: ConditionSnapshotEntry {

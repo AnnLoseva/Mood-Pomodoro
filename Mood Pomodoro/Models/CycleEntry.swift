@@ -10,18 +10,23 @@ import SwiftData
 /// app records what the user tells it, it does not model or predict a cycle.
 enum CycleEventKind: String, Codable, Sendable, CaseIterable {
     case periodStart
+    /// "Menstruation continues today" — lets the user mark individual days
+    /// (including ones remembered later) without implying a new start.
+    case periodDay
     case periodEnd
 
     var label: String {
         switch self {
         case .periodStart: return "Начало менструации"
-        case .periodEnd: return "Конец менструации"
+        case .periodDay: return "Менструация продолжается"
+        case .periodEnd: return "Последний день менструации"
         }
     }
 
     var icon: String {
         switch self {
         case .periodStart: return "🌸"
+        case .periodDay: return "🌸"
         case .periodEnd: return "🍃"
         }
     }
@@ -42,7 +47,9 @@ final class CycleEntry {
     var date: Date = Date.now
     var kindRaw: String = CycleEventKind.periodStart.rawValue
     var note: String?
+    /// When the mark was written — `date` is the day it is about.
     var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
 
     init(
         id: UUID = UUID(),
@@ -56,6 +63,7 @@ final class CycleEntry {
         self.kindRaw = kind.rawValue
         self.note = note
         self.createdAt = .now
+        self.updatedAt = .now
     }
 
     var kind: CycleEventKind {

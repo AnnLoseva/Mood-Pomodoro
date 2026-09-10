@@ -15,6 +15,7 @@ struct Mood_PomodoroApp: App {
     private let container: ModelContainer
     @State private var sessionManager: SessionManager
     @State private var cycleStore: CycleStore
+    @State private var diaryStore: DiaryEntryStore
     @State private var cloudSync = CloudSyncStatus()
     private let reasonsStore = ReasonsStore.shared
 
@@ -30,6 +31,7 @@ struct Mood_PomodoroApp: App {
         let manager = SessionManager(container: container)
         _sessionManager = State(wrappedValue: manager)
         _cycleStore = State(wrappedValue: CycleStore(container: container))
+        _diaryStore = State(wrappedValue: DiaryEntryStore(container: container))
         NotificationDelegate.shared.modelContainer = container
         SessionIntentRuntime.bind(manager)
         ReasonsStore.shared.bind(context: ModelContext(container))
@@ -43,6 +45,7 @@ struct Mood_PomodoroApp: App {
                 .environment(reasonsStore)
                 .environment(cloudSync)
                 .environment(cycleStore)
+                .environment(diaryStore)
                 .modelContainer(container)
                 .sheet(isPresented: $showQuickCheckIn) {
                     QuickCheckInSheet(

@@ -18,6 +18,8 @@ final class SessionManager {
     private let context: ModelContext
     @ObservationIgnored
     private var remoteChangeObservers: [NSObjectProtocol] = []
+    @ObservationIgnored
+    private var isRefreshing = false
 
     private(set) var activeSession: FocusSession?
     /// Bumped on every refresh so SwiftUI rebuilds even when CloudKit mutates
@@ -34,7 +36,7 @@ final class SessionManager {
     init(container: ModelContainer) {
         self.context = container.mainContext
         refresh()
-        if !Self.isRunningTests {
+        if !Self.isRunningTests, PersistenceController.isUsingCloudKit {
             observeRemoteChanges()
         }
     }
@@ -50,9 +52,9 @@ final class SessionManager {
     /// import. CloudKit is the remote source of truth; this cache is how
     /// this device renders the shared session.
     func refresh() {
-        FactorSeeder.dedupeCategories(in: context)
-        deduplicateScheduledCheckIns()
-        ReasonsStore.shared.reloadFromSwiftData()
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
 
         let previousID = activeSession?.id
         let previousState = activeSession?.state
@@ -64,8 +66,11 @@ final class SessionManager {
         repairInvariants(in: all)
         let found = all.first { $0.isActive }
 
+        let changed = found?.id != previousID || found?.state != previousState
         activeSession = found
-        revision += 1
+        if changed {
+            revision += 1
+        }
 
         if let previousID, found?.id != previousID {
             NotificationScheduler.cancelAll(for: previousID)
@@ -74,23 +79,17 @@ final class SessionManager {
             }
         }
 
-        if found == nil, previousID != nil {
-            // Remote End/Cancel: this device had an in-flight session that
-            // another device finished.
-            if let previousID {
-                NotificationScheduler.cancelAll(for: previousID)
-            }
+        if found == nil, previousID != nil, let previousID {
+            NotificationScheduler.cancelAll(for: previousID)
         }
 
-        if let session = found {
-            if session.state == .paused {
-                NotificationScheduler.cancelAll(for: session.id)
-            }
-            guard !Self.isRunningTests else { return }
-            Task { await LiveActivityController.syncIfNeeded(with: session) }
-            if session.state == .active, previousState != .active || previousID != session.id {
-                Task { await NotificationScheduler.topUpIfNeeded(for: session) }
-            }
+        guard changed, let session = found, !Self.isRunningTests else { return }
+        if session.state == .paused {
+            NotificationScheduler.cancelAll(for: session.id)
+        }
+        Task { await LiveActivityController.syncIfNeeded(with: session) }
+        if session.state == .active, previousState != .active || previousID != session.id {
+            Task { await NotificationScheduler.topUpIfNeeded(for: session) }
         }
     }
 
@@ -104,7 +103,6 @@ final class SessionManager {
     ) {
         // Another device may already have an in-flight session — don't start
         // a second one on top of it.
-        refresh()
         if activeSession != nil { return }
 
         let session = FocusSession(activity: activity, checkInIntervalMinutes: intervalMinutes)

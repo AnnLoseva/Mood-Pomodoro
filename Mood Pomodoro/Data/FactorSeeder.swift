@@ -64,14 +64,18 @@ enum FactorSeeder {
     static func dedupeCategories(in context: ModelContext) {
         let all = (try? context.fetch(FetchDescriptor<FactorCategory>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? []
         var seen: [String: FactorCategory] = [:]
+        var removed = false
         for category in all {
             if seen[category.name] != nil {
                 context.delete(category)
+                removed = true
             } else {
                 seen[category.name] = category
             }
         }
-        try? context.save()
+        if removed {
+            try? context.save()
+        }
     }
 
     private struct OptionSpec {

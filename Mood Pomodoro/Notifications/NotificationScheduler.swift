@@ -22,7 +22,7 @@ enum NotificationScheduler {
     static let checkInCategory = "MOOD_CHECKIN"
     private static let reasonCategoryPrefix = "MOOD_REASON_"
     private static let identifierPrefix = "session_"
-    private static let maxScheduledPerBatch = 60
+    private static let maxScheduledPerBatch = 12
     private static let topUpThreshold = 5
 
     static func requestAuthorizationIfNeeded() async -> Bool {
@@ -211,7 +211,7 @@ enum NotificationScheduler {
     ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = "Как ты?"
-        content.body = "Удержи уведомление и выбери состояние"
+        content.body = "Нажми, чтобы ответить"
         content.categoryIdentifier = checkInCategory
         content.threadIdentifier = sessionID.uuidString
         content.sound = .default

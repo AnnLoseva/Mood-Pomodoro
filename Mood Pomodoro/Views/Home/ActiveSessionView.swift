@@ -20,87 +20,79 @@ struct ActiveSessionView: View {
     var body: some View {
         VStack {
             Spacer(minLength: 0)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                VStack(spacing: 24) {
-                    VStack(spacing: 6) {
-                        Text(session.activity)
-                            .font(.lora(19, weight: .medium))
-                            .foregroundStyle(AppTheme.inkSoft)
-                        Text(formattedElapsed(session.elapsedActiveTime(asOf: context.date)))
-                            .font(.lora(60, weight: .semibold))
-                            .foregroundStyle(AppTheme.ink)
-                            .monospacedDigit()
-                        if session.isPaused {
-                            VStack(spacing: 4) {
-                                Label("🌙 Перерыв", systemImage: "moon.fill")
-                                    .font(.lora(15, weight: .medium))
-                                    .foregroundStyle(AppTheme.rustDeep)
-                                Text(formattedElapsed(session.breakDuration(asOf: context.date)))
-                                    .font(.lora(22, weight: .medium))
-                                    .foregroundStyle(AppTheme.ink)
-                                    .monospacedDigit()
-                                Text("Ты можешь спокойно отдохнуть.")
-                                    .font(.lora(13))
-                                    .foregroundStyle(AppTheme.inkSoft)
-                            }
-                        } else {
-                            Text("🟢 Работа")
-                                .font(.lora(13, weight: .medium))
-                                .foregroundStyle(AppTheme.forest)
+            VStack(spacing: 24) {
+                VStack(spacing: 6) {
+                    Text(session.activity)
+                        .font(.lora(19, weight: .medium))
+                        .foregroundStyle(AppTheme.inkSoft)
+                    SessionClock(session: session)
+                    if session.isPaused {
+                        VStack(spacing: 4) {
+                            Label("🌙 Перерыв", systemImage: "moon.fill")
+                                .font(.lora(15, weight: .medium))
+                                .foregroundStyle(AppTheme.rustDeep)
+                            BreakClock(session: session)
+                            Text("Ты можешь спокойно отдохнуть.")
+                                .font(.lora(13))
+                                .foregroundStyle(AppTheme.inkSoft)
                         }
+                    } else {
+                        Text("🟢 Работа")
+                            .font(.lora(13, weight: .medium))
+                            .foregroundStyle(AppTheme.forest)
                     }
-
-                    if !session.sortedCheckIns.isEmpty {
-                        HStack(spacing: 10) {
-                            ForEach(session.sortedCheckIns.suffix(6), id: \.id) { checkIn in
-                                MoodImage(mood: checkIn.mood, size: 40)
-                            }
-                        }
-                    }
-
-                    ConditionsSummaryView(
-                        title: "Условия",
-                        chips: session.activeConditions(asOf: context.date).map(\.asChip),
-                        actionTitle: "Изменить",
-                        onTap: { openConditionsPicker() }
-                    )
-
-                    if !session.isPaused {
-                        Button {
-                            showQuickCheckIn = true
-                        } label: {
-                            Text("Как я сейчас?")
-                        }
-                        .buttonStyle(.goblinPrimary)
-                    }
-
-                    HStack(spacing: 14) {
-                        Button {
-                            session.isPaused ? sessionManager.resume() : sessionManager.pause()
-                        } label: {
-                            Label(session.isPaused ? "Продолжить" : "Пауза",
-                                  systemImage: session.isPaused ? "play.fill" : "pause.fill")
-                        }
-                        .buttonStyle(.goblinSecondary)
-
-                        Button {
-                            showFinishConfirm = true
-                        } label: {
-                            Label("Завершить", systemImage: "checkmark.circle")
-                        }
-                        .buttonStyle(.goblinSecondary)
-                    }
-
-                    Button("Отменить сессию", role: .destructive) {
-                        showCancelConfirm = true
-                    }
-                    .font(.lora(13))
-                    .foregroundStyle(AppTheme.rustDeep)
-                    .padding(.top, 2)
                 }
-                .parchmentCard(padding: 24)
-                .padding(.horizontal, 24)
+
+                if !session.sortedCheckIns.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(session.sortedCheckIns.suffix(6), id: \.id) { checkIn in
+                            MoodImage(mood: checkIn.mood, size: 40)
+                        }
+                    }
+                }
+
+                ConditionsSummaryView(
+                    title: "Условия",
+                    chips: session.activeConditions(asOf: .now).map(\.asChip),
+                    actionTitle: "Изменить",
+                    onTap: { openConditionsPicker() }
+                )
+
+                if !session.isPaused {
+                    Button {
+                        showQuickCheckIn = true
+                    } label: {
+                        Text("Как я сейчас?")
+                    }
+                    .buttonStyle(.goblinPrimary)
+                }
+
+                HStack(spacing: 14) {
+                    Button {
+                        session.isPaused ? sessionManager.resume() : sessionManager.pause()
+                    } label: {
+                        Label(session.isPaused ? "Продолжить" : "Пауза",
+                              systemImage: session.isPaused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.goblinSecondary)
+
+                    Button {
+                        showFinishConfirm = true
+                    } label: {
+                        Label("Завершить", systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(.goblinSecondary)
+                }
+
+                Button("Отменить сессию", role: .destructive) {
+                    showCancelConfirm = true
+                }
+                .font(.lora(13))
+                .foregroundStyle(AppTheme.rustDeep)
+                .padding(.top, 2)
             }
+            .parchmentCard(padding: 24)
+            .padding(.horizontal, 24)
             Spacer(minLength: 0)
         }
         .sheet(isPresented: $showQuickCheckIn) {
@@ -142,7 +134,21 @@ struct ActiveSessionView: View {
         showConditionsPicker = true
     }
 
-    private func formattedElapsed(_ interval: TimeInterval) -> String {
+}
+
+private struct SessionClock: View {
+    let session: FocusSession
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(Self.formatted(session.elapsedActiveTime(asOf: context.date)))
+                .font(.lora(60, weight: .semibold))
+                .foregroundStyle(AppTheme.ink)
+                .monospacedDigit()
+        }
+    }
+
+    static func formatted(_ interval: TimeInterval) -> String {
         let total = Int(interval)
         let hours = total / 3600
         let minutes = (total % 3600) / 60
@@ -151,5 +157,18 @@ struct ActiveSessionView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+private struct BreakClock: View {
+    let session: FocusSession
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(SessionClock.formatted(session.breakDuration(asOf: context.date)))
+                .font(.lora(22, weight: .medium))
+                .foregroundStyle(AppTheme.ink)
+                .monospacedDigit()
+        }
     }
 }

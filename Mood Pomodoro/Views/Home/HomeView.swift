@@ -16,7 +16,6 @@ struct HomeView: View {
                 Group {
                     if let session = sessionManager.activeSession {
                         ActiveSessionView(session: session)
-                            .id(sessionManager.revision)
                     } else {
                         NewSessionView()
                     }

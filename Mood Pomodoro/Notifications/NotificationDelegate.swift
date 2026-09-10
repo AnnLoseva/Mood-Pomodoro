@@ -34,7 +34,21 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+        let userInfo = notification.request.content.userInfo
+        let type = userInfo["notificationType"] as? String
+        let sessionID = (userInfo["sessionID"] as? String).flatMap(UUID.init)
+        let checkInID = (userInfo["checkInID"] as? String).flatMap(UUID.init)
+        let pendingMood = (userInfo["mood"] as? String).flatMap { Mood(rawValue: $0) }
+
+        // App is already open: don't spam a system banner every interval.
+        // Present the tiny check-in sheet instead — that's the one-tap path.
+        if type == "checkin" || type == "reason" {
+            await MainActor.run {
+                onRequestQuickCheckIn?(sessionID, pendingMood, checkInID)
+            }
+            return [.sound]
+        }
+        return [.banner, .sound, .list]
     }
 
     nonisolated func userNotificationCenter(

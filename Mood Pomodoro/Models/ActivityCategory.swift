@@ -31,6 +31,10 @@ enum ActivityCategory: String, CaseIterable, Identifiable {
         }
     }
 
+    /// `label` is what gets stored on a session (it stays Russian so history
+    /// doesn't fork by language); this is what's shown.
+    var displayLabel: String { Ldata(label) }
+
     var imageName: String {
         switch self {
         case .math: return "ActivityMath"

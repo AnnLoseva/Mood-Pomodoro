@@ -10,24 +10,28 @@ enum DurationFormatting {
         let total = max(0, Int(interval.rounded()))
         let hours = total / 3600
         let minutes = (total % 3600) / 60
-        if hours > 0 { return "\(hours)ч \(minutes)м" }
-        return "\(minutes)м"
+        if hours > 0 { return L("\(hours)ч \(minutes)м", "\(hours)h \(minutes)m") }
+        return L("\(minutes)м", "\(minutes)m")
     }
 }
 
 /// Locale-aware date/time strings. Persistence always stores `Date`;
 /// these formatters are UI-only.
 enum DateFormatting {
+    /// Dates follow the app's language, not the device's — an English diary
+    /// on a Russian phone still says "September".
+    private static var locale: Locale { AppLanguage.current.locale }
+
     static func fullDate(_ date: Date) -> String {
-        date.formatted(.dateTime.day().month(.wide).year())
+        date.formatted(.dateTime.day().month(.wide).year().locale(locale))
     }
 
     static func compactDate(_ date: Date) -> String {
-        date.formatted(.dateTime.day().month(.abbreviated))
+        date.formatted(.dateTime.day().month(.abbreviated).locale(locale))
     }
 
     static func time(_ date: Date) -> String {
-        date.formatted(.dateTime.hour().minute())
+        date.formatted(.dateTime.hour().minute().locale(locale))
     }
 
     static func timeRange(from start: Date, to end: Date?) -> String {
@@ -35,8 +39,8 @@ enum DateFormatting {
     }
 
     static func historySectionTitle(_ day: Date, calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(day) { return "Сегодня" }
-        if calendar.isDateInYesterday(day) { return "Вчера" }
+        if calendar.isDateInToday(day) { return L("Сегодня", "Today") }
+        if calendar.isDateInYesterday(day) { return L("Вчера", "Yesterday") }
         return fullDate(day)
     }
 

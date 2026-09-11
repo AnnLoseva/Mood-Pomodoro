@@ -12,6 +12,13 @@ import Testing
 /// concurrent-container raciness the main suite works around.
 struct DiaryAnalyticsTests {
 
+    /// The test host is the app itself, so it inherits whatever language
+    /// was last picked in the simulator. Pin Russian — the fixtures and the
+    /// expectations below are written against the Russian data.
+    init() {
+        UserDefaults.standard.set(AppLanguage.ru.rawValue, forKey: AppLanguage.storageKey)
+    }
+
     private var calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -441,5 +448,70 @@ struct DiaryAnalyticsTests {
         #expect(!summary.isEmpty)
         #expect(summary.conditions.map(\.optionName) == ["Пуэр"])
         #expect(summary.timelineEvents.map(\.target) == [.factor(factor.id), .note(note.id)])
+    }
+
+    // MARK: - Export
+
+    @Test func englishExportReadsForSomeoneWhoDoesNotReadRussian() {
+        let cycle = [CycleEntry(date: date(7), kind: .periodStart, calendar: calendar)]
+        let support = SupportEntry(day: date(8), status: .taken, time: date(8, 9, 15), calendar: calendar)
+        let mood = checkIn(.good, at: date(8, 10))
+        mood.reason = "Интересно"
+
+        let text = DiaryExporter.export(
+            ExportInput(checkIns: [mood], cycleEntries: cycle, supportEntries: [support]),
+            options: ExportOptions(start: date(7), end: date(9), language: .en),
+            calendar: calendar,
+            now: date(10, 20)
+        )
+
+        #expect(text.contains("# Mood diary"))
+        // Built-in reason is translated; the mood carries its scale value.
+        #expect(text.contains("😄 Good (4/5) — Interesting"))
+        #expect(text.contains("Daily support: Taken"))
+        #expect(text.contains("Period — day 1"))
+        // Two of the three days have no support mark: "not recorded", never "not taken".
+        #expect(text.contains("not recorded 2"))
+        #expect(text.contains("not taken 0"))
+    }
+
+    @Test func exportLeavesOutWhatTheUserExcluded() {
+        let cycle = [CycleEntry(date: date(7), kind: .periodStart, calendar: calendar)]
+        let support = SupportEntry(day: date(7), status: .taken, calendar: calendar)
+        let note = JournalNote(timestamp: date(7, 18), text: "секретная заметка")
+
+        var options = ExportOptions(start: date(7), end: date(7), language: .en)
+        options.includeNotes = false
+        options.includeCycle = false
+        options.includeSupport = false
+        let text = DiaryExporter.export(
+            ExportInput(cycleEntries: cycle, supportEntries: [support], notes: [note]),
+            options: options,
+            calendar: calendar,
+            now: date(10, 20)
+        )
+
+        #expect(!text.contains("секретная"))
+        #expect(!text.contains("Period"))
+        #expect(!text.contains("Daily support"))
+    }
+
+    @Test func jsonExportKeepsWhenItHappenedApartFromWhenItWasWritten() throws {
+        let mood = checkIn(.tired, at: date(8, 22, 30))
+
+        let text = DiaryExporter.export(
+            ExportInput(checkIns: [mood]),
+            options: ExportOptions(start: date(8), end: date(8), language: .en, format: .json),
+            calendar: calendar,
+            now: date(10, 20)
+        )
+
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let records = try #require(object["checkIns"] as? [[String: Any]])
+        #expect(records.count == 1)
+        #expect(records.first?["mood"] as? Int == 2)
+        #expect(records.first?["moodLabel"] as? String == "A bit hard")
+        #expect(records.first?["time"] as? String == "2024-09-08T22:30:00Z")
+        #expect(records.first?["recordedAt"] as? String != records.first?["time"] as? String)
     }
 }

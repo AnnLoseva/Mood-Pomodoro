@@ -48,12 +48,12 @@ struct QuickCheckInSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Как ты?")
+                    Text(L("Как ты?", "How are you?"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть") { dismiss() }
+                    Button(L("Закрыть", "Close")) { dismiss() }
                         .font(.lora(15))
                         .foregroundStyle(AppTheme.forest)
                 }
@@ -144,7 +144,7 @@ private struct ReasonPickerView: View {
                         Button {
                             onSelect(reason, trimmedNote)
                         } label: {
-                            Text(reason)
+                            Text(Ldata(reason))
                                 .font(.lora(16))
                                 .foregroundStyle(AppTheme.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -164,7 +164,7 @@ private struct ReasonPickerView: View {
 
                 // Optional — a place for the sentence a stock reason doesn't
                 // cover. Never required to save a check-in.
-                TextField("Заметка (необязательно)", text: $note)
+                TextField(L("Заметка (необязательно)", "Note (optional)"), text: $note)
                     .font(.lora(14))
                     .foregroundStyle(AppTheme.ink)
                     .padding(.horizontal, 14)
@@ -178,7 +178,7 @@ private struct ReasonPickerView: View {
                             .stroke(AppTheme.border, lineWidth: 1.25)
                     )
 
-                Button("Пропустить") {
+                Button(L("Пропустить", "Skip")) {
                     onSelect(nil, trimmedNote)
                 }
                 .font(.lora(14))

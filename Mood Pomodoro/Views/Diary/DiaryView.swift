@@ -18,9 +18,10 @@ import SwiftData
 /// spreads into two columns at regular width instead of getting its own view.
 struct DiaryView: View {
     private enum Mode: String, CaseIterable, Identifiable {
-        case day = "День"
-        case month = "Месяц"
+        case day
+        case month
         var id: String { rawValue }
+        var title: String { self == .day ? L("День", "Day") : L("Месяц", "Month") }
     }
 
     @Environment(SessionManager.self) private var sessionManager
@@ -37,6 +38,7 @@ struct DiaryView: View {
     @State private var selectedDate: Date = .now
     @State private var showQuickCheckIn = false
     @State private var entrySheet: DiaryEntrySheet?
+    @State private var showExport = false
 
     private let calendar = Calendar.current
 
@@ -112,16 +114,26 @@ struct DiaryView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Дневник")
+                    Text(L("Дневник", "Diary"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
-                if !isToday {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Сегодня") { selectedDate = .now }
+                ToolbarItem(placement: .topBarLeading) {
+                    LanguageMenu()
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !isToday {
+                        Button(L("Сегодня", "Today")) { selectedDate = .now }
                             .font(.lora(14))
                             .foregroundStyle(AppTheme.forest)
                     }
+                    Button {
+                        showExport = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .foregroundStyle(AppTheme.forest)
+                    .accessibilityLabel(L("Экспорт", "Export"))
                 }
             }
             .sheet(isPresented: $showQuickCheckIn) {
@@ -129,6 +141,9 @@ struct DiaryView: View {
             }
             .sheet(item: $entrySheet) { sheet in
                 DiaryEntrySheetView(sheet: sheet, day: selectedDate)
+            }
+            .sheet(isPresented: $showExport) {
+                ExportSheet()
             }
         }
     }
@@ -140,7 +155,7 @@ struct DiaryView: View {
                 Button {
                     mode = item
                 } label: {
-                    Text(item.rawValue)
+                    Text(item.title)
                         .font(.lora(13, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
                         .padding(.horizontal, 18)
@@ -159,14 +174,14 @@ struct DiaryView: View {
     /// starts on the day being viewed and lets the date be changed.
     private var addMenu: some View {
         Menu {
-            Button("🌿 Деятельность") { entrySheet = .activity(editing: nil) }
-            Button("🙂 Настроение") { entrySheet = .mood(editing: nil) }
-            Button("💊 Поддержка") { entrySheet = .support }
-            Button("🌸 Цикл") { entrySheet = .cycle }
-            Button("☕ Фактор") { entrySheet = .factor(editing: nil) }
-            Button("📝 Заметку") { entrySheet = .note(editing: nil) }
+            Button(L("🌿 Деятельность", "🌿 Activity")) { entrySheet = .activity(editing: nil) }
+            Button(L("🙂 Настроение", "🙂 Mood")) { entrySheet = .mood(editing: nil) }
+            Button(L("💊 Поддержка", "💊 Support")) { entrySheet = .support }
+            Button(L("🌸 Цикл", "🌸 Cycle")) { entrySheet = .cycle }
+            Button(L("☕ Фактор", "☕ Factor")) { entrySheet = .factor(editing: nil) }
+            Button(L("📝 Заметку", "📝 Note")) { entrySheet = .note(editing: nil) }
         } label: {
-            Label("Добавить", systemImage: "plus")
+            Label(L("Добавить", "Add"), systemImage: "plus")
                 .font(.lora(14, weight: .medium))
                 .foregroundStyle(AppTheme.forest)
                 .padding(.horizontal, 16)
@@ -174,13 +189,13 @@ struct DiaryView: View {
                 .background(Capsule().fill(AppTheme.parchmentCard))
                 .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1.25))
         }
-        .accessibilityLabel("Добавить запись")
+        .accessibilityLabel(L("Добавить запись", "Add entry"))
     }
 
     private var stepper: some View {
         DiaryPeriodStepper(
             title: mode == .day ? dayTitle : monthTitle,
-            subtitle: mode == .day ? dailySummary.cycleDay.map { "🌸 День цикла: \($0)" } : nil,
+            subtitle: mode == .day ? dailySummary.cycleDay.map { L("🌸 День цикла: \($0)", "🌸 Cycle day: \($0)") } : nil,
             onPrevious: { shift(by: -1) },
             onNext: { shift(by: 1) },
             onTapTitle: mode == .day ? { mode = .month } : nil
@@ -192,7 +207,7 @@ struct DiaryView: View {
     }
 
     private var monthTitle: String {
-        selectedDate.formatted(.dateTime.month(.wide).year()).localizedCapitalized
+        selectedDate.formatted(.dateTime.month(.wide).year().locale(AppLanguage.current.locale)).localizedCapitalized
     }
 
     private func shift(by amount: Int) {

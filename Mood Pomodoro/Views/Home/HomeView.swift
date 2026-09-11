@@ -28,6 +28,9 @@ struct HomeView: View {
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    LanguageMenu()
+                }
             }
         }
     }

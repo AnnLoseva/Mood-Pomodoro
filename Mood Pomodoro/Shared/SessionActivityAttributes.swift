@@ -17,6 +17,9 @@ nonisolated struct SessionActivityAttributes: ActivityAttributes {
     var activityName: String
     var startDate: Date
     var checkInIntervalMinutes: Int
+    /// `AppLanguage` raw value at start. The widget runs in its own process
+    /// with its own defaults, so it can't read the app's language setting.
+    var languageCode: String
 
     /// Everything that *can* change while the Live Activity is running.
     ///

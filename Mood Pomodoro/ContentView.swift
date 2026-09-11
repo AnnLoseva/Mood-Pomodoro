@@ -27,13 +27,13 @@ private struct iPhoneRootView: View {
     var body: some View {
         TabView {
             HomeView()
-                .tabItem { Label("Сейчас", systemImage: "leaf.fill") }
+                .tabItem { Label(L("Сейчас", "Now"), systemImage: "leaf.fill") }
             DiaryView()
-                .tabItem { Label("Дневник", systemImage: "text.book.closed.fill") }
+                .tabItem { Label(L("Дневник", "Diary"), systemImage: "text.book.closed.fill") }
             HistoryView()
-                .tabItem { Label("История", systemImage: "book.closed.fill") }
+                .tabItem { Label(L("История", "History"), systemImage: "book.closed.fill") }
             AnalyticsView()
-                .tabItem { Label("Аналитика", systemImage: "chart.line.uptrend.xyaxis") }
+                .tabItem { Label(L("Аналитика", "Analytics"), systemImage: "chart.line.uptrend.xyaxis") }
         }
         .toolbarBackground(AppTheme.parchmentCard, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
@@ -47,10 +47,10 @@ private struct iPadRootView: View {
 
         var title: String {
             switch self {
-            case .today: return "Сейчас"
-            case .diary: return "Дневник"
-            case .history: return "История"
-            case .analytics: return "Аналитика"
+            case .today: return L("Сейчас", "Now")
+            case .diary: return L("Дневник", "Diary")
+            case .history: return L("История", "History")
+            case .analytics: return L("Аналитика", "Analytics")
             }
         }
 
@@ -83,6 +83,9 @@ private struct iPadRootView: View {
                     Text("Mood Pomodoro")
                         .font(.lora(18, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    LanguageMenu()
                 }
             }
         } detail: {

@@ -24,6 +24,9 @@ struct Mood_PomodoroApp: App {
     @State private var quickCheckInExistingID: UUID?
     @State private var showQuickCheckIn = false
     @State private var showNotificationExplainer = false
+    @AppStorage(AppLanguage.storageKey) private var languageRaw = AppLanguage.ru.rawValue
+
+    private var language: AppLanguage { AppLanguage(rawValue: languageRaw) ?? .ru }
 
     init() {
         let container = PersistenceController.makeContainer()
@@ -41,6 +44,15 @@ struct Mood_PomodoroApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // All text is resolved at render time through `L(…)`, so a
+                // new identity on language change redraws every screen;
+                // `\.locale` covers the system pieces (DatePicker, menus).
+                .id(languageRaw)
+                .environment(\.locale, language.locale)
+                .onChange(of: languageRaw) { _, _ in
+                    // Notification buttons are registered with iOS as text.
+                    NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.reasons)
+                }
                 .environment(sessionManager)
                 .environment(reasonsStore)
                 .environment(cloudSync)
@@ -54,13 +66,13 @@ struct Mood_PomodoroApp: App {
                         existingCheckInID: quickCheckInExistingID
                     )
                 }
-                .alert("Как ты?", isPresented: $showNotificationExplainer) {
-                    Button("Продолжить") {
+                .alert(L("Как ты?", "How are you?"), isPresented: $showNotificationExplainer) {
+                    Button(L("Продолжить", "Continue")) {
                         Task { _ = await NotificationScheduler.requestAuthorizationIfNeeded() }
                     }
-                    Button("Позже", role: .cancel) {}
+                    Button(L("Позже", "Later"), role: .cancel) {}
                 } message: {
-                    Text("Приложение будет иногда спрашивать «Как ты?» во время занятий. Ответ можно дать прямо из уведомления.")
+                    Text(L("Приложение будет иногда спрашивать «Как ты?» во время занятий. Ответ можно дать прямо из уведомления.", "During focus sessions the app will sometimes ask “How are you?”. You can answer right from the notification."))
                 }
                 .task {
                     NotificationDelegate.shared.onRequestQuickCheckIn = { sessionID, presetMood, existingCheckInID in

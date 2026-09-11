@@ -15,13 +15,13 @@ struct ActivitiesAnalyticsView: View {
         ScrollView {
             VStack(spacing: 10) {
                 if stats.isEmpty {
-                    Text("Недостаточно данных")
+                    Text(L("Недостаточно данных", "Not enough data"))
                         .font(.lora(14))
                         .foregroundStyle(AppTheme.inkSoft)
                 } else {
                     ForEach(stats) { activity in
                         HStack {
-                            Text(activity.activityName)
+                            Text(Ldata(activity.activityName))
                                 .font(.lora(16, weight: .medium))
                                 .foregroundStyle(AppTheme.ink)
                             Spacer()
@@ -30,7 +30,7 @@ struct ActivitiesAnalyticsView: View {
                                     .font(.lora(16, weight: .semibold))
                                     .foregroundStyle(AppTheme.forest)
                             } else {
-                                Text("мало данных")
+                                Text(L("мало данных", "little data"))
                                     .font(.lora(12))
                                     .foregroundStyle(AppTheme.inkSoft)
                             }

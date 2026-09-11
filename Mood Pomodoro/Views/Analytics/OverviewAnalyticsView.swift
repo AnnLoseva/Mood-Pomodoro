@@ -43,24 +43,24 @@ struct OverviewAnalyticsView: View {
         VStack(spacing: 14) {
             HStack(spacing: 0) {
                 statTile(
-                    title: "Среднее состояние",
+                    title: L("Среднее состояние", "Average mood"),
                     value: overview.averageMood.map { String(format: "%.1f / 5", $0) } ?? "—"
                 )
                 statTile(title: "Check-ins", value: "\(overview.checkInCount)")
             }
             HStack(spacing: 0) {
-                statTile(title: "Сессий", value: "\(overview.sessionCount)")
+                statTile(title: L("Сессий", "Sessions"), value: "\(overview.sessionCount)")
                 statTile(
-                    title: "Ср. длительность",
+                    title: L("Ср. длительность", "Avg. duration"),
                     value: overview.averageSessionDuration.map(formattedMinutes) ?? "—"
                 )
             }
             HStack {
-                Text("Среднее время до 🥲 / 😭")
+                Text(L("Среднее время до 🥲 / 😭", "Avg. time until 🥲 / 😭"))
                     .font(.lora(13))
                     .foregroundStyle(AppTheme.inkSoft)
                 Spacer()
-                Text(overview.averageTimeToFirstDifficultMood.map(formattedMinutes) ?? "Недостаточно данных")
+                Text(overview.averageTimeToFirstDifficultMood.map(formattedMinutes) ?? L("Недостаточно данных", "Not enough data"))
                     .font(.lora(13, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
             }
@@ -89,7 +89,7 @@ struct OverviewAnalyticsView: View {
 
     private var trajectoryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Моё состояние")
+            Text(L("Моё состояние", "My mood"))
                 .font(.lora(16, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
 
@@ -119,7 +119,7 @@ struct OverviewAnalyticsView: View {
                 AxisMarks { value in
                     AxisGridLine().foregroundStyle(AppTheme.border)
                     if let minutes = value.as(Int.self) {
-                        AxisValueLabel("\(minutes)м").font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
+                        AxisValueLabel(L("\(minutes)м", "\(minutes)m")).font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
                     }
                 }
             }
@@ -137,13 +137,13 @@ struct OverviewAnalyticsView: View {
 
     private var insightsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Что связано с хорошим состоянием?")
+            Text(L("Что связано с хорошим состоянием?", "What goes along with a good mood?"))
                 .font(.lora(16, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
             ForEach(insights) { insight in
                 HStack {
                     FactorIconView(icon: insight.icon, iconImageName: insight.iconImageName, size: 20)
-                    Text(insight.name)
+                    Text(Ldata(insight.name))
                         .font(.lora(14))
                         .foregroundStyle(AppTheme.ink)
                     Spacer()
@@ -152,7 +152,7 @@ struct OverviewAnalyticsView: View {
                         .foregroundStyle(insight.moodDelta >= 0 ? AppTheme.forest : AppTheme.rustDeep)
                 }
             }
-            Text("В твоих наблюдениях — не медицинский вывод.")
+            Text(L("В твоих наблюдениях — не медицинский вывод.", "From your observations — not a medical conclusion."))
                 .font(.lora(11))
                 .foregroundStyle(AppTheme.inkSoft)
         }
@@ -167,7 +167,7 @@ struct OverviewAnalyticsView: View {
             standaloneCheckIns: standaloneCheckIns
         )
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Частые причины")
+            Text(L("Частые причины", "Common reasons"))
                 .font(.lora(16, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
 
@@ -188,13 +188,13 @@ struct OverviewAnalyticsView: View {
             }
 
             if reasons.isEmpty {
-                Text("Недостаточно данных")
+                Text(L("Недостаточно данных", "Not enough data"))
                     .font(.lora(13))
                     .foregroundStyle(AppTheme.inkSoft)
             } else {
                 ForEach(reasons.prefix(5)) { reason in
                     HStack {
-                        Text(reason.reason)
+                        Text(Ldata(reason.reason))
                             .font(.lora(14))
                             .foregroundStyle(AppTheme.ink)
                         Spacer()
@@ -212,8 +212,8 @@ struct OverviewAnalyticsView: View {
 
 private func formattedMinutes(_ interval: TimeInterval) -> String {
     let minutes = Int(interval / 60)
-    if minutes < 60 { return "\(minutes) мин" }
-    return "\(minutes / 60)ч \(minutes % 60)м"
+    if minutes < 60 { return L("\(minutes) мин", "\(minutes) min") }
+    return L("\(minutes / 60)ч \(minutes % 60)м", "\(minutes / 60)h \(minutes % 60)m")
 }
 
 struct MoodDistributionChart: View {

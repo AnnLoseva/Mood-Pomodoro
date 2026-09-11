@@ -155,7 +155,7 @@ extension AnalyticsService {
                     id: "support-\(support.id.uuidString)",
                     timestamp: time,
                     kind: .support,
-                    title: "Поддержка · \(support.status.label)",
+                    title: L("Поддержка · \(support.status.label)", "Support · \(support.status.label)"),
                     subtitle: support.note,
                     mood: nil,
                     target: .support(support.day)
@@ -271,7 +271,7 @@ extension AnalyticsService {
         return ranges.enumerated().map { index, range in
             let matching = grouped[index] ?? []
             return CycleMoodBucket(
-                label: "Дни \(range.lowerBound)–\(range.upperBound)",
+                label: L("Дни \(range.lowerBound)–\(range.upperBound)", "Days \(range.lowerBound)–\(range.upperBound)"),
                 dayRange: range,
                 averageMood: averageMood(of: matching),
                 checkInCount: matching.count
@@ -330,14 +330,14 @@ extension AnalyticsService {
     /// Also attaches what each row edits: a backdated session's start/end
     /// open the activity form, and any check-in or condition opens its own.
     private static func labelled(_ event: TimelineEvent, session: FocusSession) -> TimelineEvent {
-        let activity = session.activity
+        let activity = Ldata(session.activity)
         var title = event.title
         var subtitle = event.subtitle
         var target: DiaryEditTarget?
         switch event.kind {
         case .start, .end:
             if !activity.isEmpty {
-                title = event.kind == .start ? activity : "\(activity) — завершение"
+                title = event.kind == .start ? activity : L("\(activity) — завершение", "\(activity) — end")
             }
             if session.isManualEntry {
                 target = .session(session.id)
@@ -374,7 +374,7 @@ extension AnalyticsService {
             id: "standalone-\(checkIn.id.uuidString)",
             timestamp: checkIn.timestamp,
             kind: .checkIn,
-            title: checkIn.reason ?? checkIn.mood.label,
+            title: checkIn.reason.map(Ldata) ?? checkIn.mood.label,
             subtitle: checkIn.note,
             mood: checkIn.mood,
             target: .checkIn(checkIn.id)
@@ -386,8 +386,8 @@ extension AnalyticsService {
             id: "diary-factor-\(event.id.uuidString)",
             timestamp: event.timestamp,
             kind: .conditionChanged,
-            title: "\(event.categoryIcon) \(event.optionName)",
-            subtitle: event.categoryName,
+            title: "\(event.categoryIcon) \(Ldata(event.optionName))",
+            subtitle: Ldata(event.categoryName),
             mood: nil,
             target: .factor(event.id)
         )

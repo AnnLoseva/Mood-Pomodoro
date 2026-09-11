@@ -63,7 +63,7 @@ struct ActivityStatRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(stats.activityName)
+                Text(Ldata(stats.activityName))
                     .font(.lora(15, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
                 Text(detailLine)
@@ -91,9 +91,9 @@ struct ActivityStatRow: View {
     private var detailLine: String {
         var parts = [DurationFormatting.compact(stats.activeDuration)]
         if stats.breakDuration > 0 {
-            parts.append("\(DurationFormatting.compact(stats.breakDuration)) перерыв")
+            parts.append(L("\(DurationFormatting.compact(stats.breakDuration)) перерыв", "\(DurationFormatting.compact(stats.breakDuration)) break"))
         }
-        parts.append(stats.sessionCount == 1 ? "1 сессия" : "\(stats.sessionCount) сессии")
+        parts.append(countLabel(stats.sessionCount, ru: ("сессия", "сессии", "сессий"), en: ("session", "sessions")))
         if stats.checkInCount > 0, stats.hasEnoughData {
             parts.append("\(stats.checkInCount) check-in")
         }

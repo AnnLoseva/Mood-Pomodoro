@@ -44,14 +44,14 @@ extension FocusSession {
 
         let initialConditions = activeConditions(asOf: startDate)
         let startSubtitle = initialConditions
-            .map { "\($0.categoryIcon) \($0.optionName)" }
+            .map { "\($0.categoryIcon) \(Ldata($0.optionName))" }
             .joined(separator: " · ")
         events.append(
             TimelineEvent(
                 id: "start-\(id.uuidString)",
                 timestamp: startDate,
                 kind: .start,
-                title: "Начало",
+                title: L("Начало", "Start"),
                 subtitle: startSubtitle.isEmpty ? nil : startSubtitle,
                 mood: nil
             )
@@ -63,7 +63,7 @@ extension FocusSession {
                     id: "checkin-\(checkIn.id.uuidString)",
                     timestamp: checkIn.timestamp,
                     kind: .checkIn,
-                    title: checkIn.reason ?? checkIn.mood.label,
+                    title: checkIn.reason.map(Ldata) ?? checkIn.mood.label,
                     subtitle: nil,
                     mood: checkIn.mood
                 )
@@ -76,7 +76,7 @@ extension FocusSession {
                     id: "pause-\(segment.id.uuidString)",
                     timestamp: segment.startDate,
                     kind: .pause,
-                    title: "Перерыв",
+                    title: L("Перерыв", "Break"),
                     subtitle: nil,
                     mood: nil
                 )
@@ -87,7 +87,7 @@ extension FocusSession {
                         id: "resume-\(segment.id.uuidString)",
                         timestamp: resumeDate,
                         kind: .resume,
-                        title: "Продолжение",
+                        title: L("Продолжение", "Resumed"),
                         subtitle: nil,
                         mood: nil
                     )
@@ -103,7 +103,7 @@ extension FocusSession {
                     id: "condition-\(event.id.uuidString)",
                     timestamp: event.timestamp,
                     kind: .conditionChanged,
-                    title: "\(event.categoryIcon) \(event.categoryName) изменён: \(event.optionName)",
+                    title: L("\(event.categoryIcon) \(event.categoryName) изменён: \(event.optionName)", "\(event.categoryIcon) \(Ldata(event.categoryName)) changed: \(Ldata(event.optionName))"),
                     subtitle: nil,
                     mood: nil
                 )
@@ -116,7 +116,7 @@ extension FocusSession {
                     id: "end-\(id.uuidString)",
                     timestamp: endDate,
                     kind: .end,
-                    title: "Завершение",
+                    title: L("Завершение", "End"),
                     subtitle: nil,
                     mood: nil
                 )

@@ -17,9 +17,9 @@ enum CycleEventKind: String, Codable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .periodStart: return "Начало менструации"
-        case .periodDay: return "Менструация продолжается"
-        case .periodEnd: return "Последний день менструации"
+        case .periodStart: return L("Начало менструации", "Period started")
+        case .periodDay: return L("Менструация продолжается", "Period continues")
+        case .periodEnd: return L("Последний день менструации", "Last day of period")
         }
     }
 

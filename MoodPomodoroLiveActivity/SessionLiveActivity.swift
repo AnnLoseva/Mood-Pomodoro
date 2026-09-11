@@ -32,7 +32,11 @@ struct SessionLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    LiveActivityControls(sessionID: context.attributes.sessionID, state: context.state)
+                    LiveActivityControls(
+                        sessionID: context.attributes.sessionID,
+                        state: context.state,
+                        language: context.attributes.language
+                    )
                 }
             } compactLeading: {
                 Text("🍄")
@@ -74,7 +78,7 @@ private struct LockScreenLiveActivityView: View {
 
                 if let breakRange = state.breakTimerRange {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Перерыв")
+                        Text(L("Перерыв", "Break", in: attributes.language))
                             .font(.caption)
                             .foregroundStyle(paletteInk.opacity(0.7))
                         WorkTimerText(range: breakRange)
@@ -85,12 +89,12 @@ private struct LockScreenLiveActivityView: View {
             }
 
             if state.isPaused {
-                Text("Ты можешь спокойно отдохнуть.")
+                Text(L("Ты можешь спокойно отдохнуть.", "Take your time and rest.", in: attributes.language))
                     .font(.caption)
                     .foregroundStyle(paletteInk.opacity(0.75))
             }
 
-            LiveActivityControls(sessionID: attributes.sessionID, state: state)
+            LiveActivityControls(sessionID: attributes.sessionID, state: state, language: attributes.language)
         }
         .padding(16)
         .activityBackgroundTint(Color(red: 0.965, green: 0.937, blue: 0.867))
@@ -100,11 +104,11 @@ private struct LockScreenLiveActivityView: View {
     @ViewBuilder
     private var statusLabel: some View {
         if state.isPaused {
-            Text("🌙 Перерыв")
+            Text(L("🌙 Перерыв", "🌙 Break", in: attributes.language))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color(red: 0.518, green: 0.271, blue: 0.145))
         } else {
-            Text("🟢 Работа")
+            Text(L("🟢 Работа", "🟢 Working", in: attributes.language))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color(red: 0.310, green: 0.400, blue: 0.271))
         }
@@ -114,16 +118,17 @@ private struct LockScreenLiveActivityView: View {
 private struct LiveActivityControls: View {
     let sessionID: UUID
     let state: SessionActivityAttributes.ContentState
+    let language: AppLanguage
 
     var body: some View {
         if state.isPaused {
             HStack(spacing: 8) {
                 Button(intent: ResumeSessionIntent(sessionID: sessionID)) {
-                    Label("Продолжить", systemImage: "play.fill")
+                    Label(L("Продолжить", "Resume", in: language), systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
                 Button(intent: EndSessionIntent(sessionID: sessionID)) {
-                    Label("Закончить", systemImage: "stop.fill")
+                    Label(L("Закончить", "Finish", in: language), systemImage: "stop.fill")
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -131,15 +136,15 @@ private struct LiveActivityControls: View {
         } else {
             HStack(spacing: 8) {
                 Button(intent: OpenCheckInIntent(sessionID: sessionID)) {
-                    Text("Как я сейчас")
+                    Text(L("Как я сейчас", "Check in", in: language))
                         .frame(maxWidth: .infinity)
                 }
                 Button(intent: PauseSessionIntent(sessionID: sessionID)) {
-                    Text("Пауза")
+                    Text(L("Пауза", "Pause", in: language))
                         .frame(maxWidth: .infinity)
                 }
                 Button(intent: EndSessionIntent(sessionID: sessionID)) {
-                    Text("Закончить")
+                    Text(L("Закончить", "Finish", in: language))
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -160,3 +165,7 @@ private struct WorkTimerText: View {
 }
 
 private let paletteInk = Color(red: 0.290, green: 0.220, blue: 0.149)
+
+private extension SessionActivityAttributes {
+    var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .ru }
+}

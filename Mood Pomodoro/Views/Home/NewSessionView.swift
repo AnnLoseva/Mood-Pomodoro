@@ -25,7 +25,7 @@ struct NewSessionView: View {
             VStack(spacing: 24) {
                 VStack(spacing: 4) {
                     MoodImage(mood: .veryGood, size: 84)
-                    Text("Новая сессия")
+                    Text(L("Новая сессия", "New session"))
                         .font(.lora(26, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
@@ -33,10 +33,10 @@ struct NewSessionView: View {
 
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Чем занимаешься?")
+                        Text(L("Чем занимаешься?", "What are you working on?"))
                             .font(.lora(14, weight: .medium))
                             .foregroundStyle(AppTheme.inkSoft)
-                        TextField("Например, Математика", text: $activity)
+                        TextField(L("Например, Математика", "For example, Math"), text: $activity)
                             .font(.lora(17))
                             .foregroundStyle(AppTheme.ink)
                             .focused($activityFieldFocused)
@@ -53,7 +53,7 @@ struct NewSessionView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Или выбери из леса")
+                        Text(L("Или выбери из леса", "Or pick from the forest"))
                             .font(.lora(14, weight: .medium))
                             .foregroundStyle(AppTheme.inkSoft)
                         CategoryPicker(selectedLabel: trimmedActivity) { category in
@@ -63,13 +63,13 @@ struct NewSessionView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Как часто спрашивать?")
+                        Text(L("Как часто спрашивать?", "How often should I ask?"))
                             .font(.lora(14, weight: .medium))
                             .foregroundStyle(AppTheme.inkSoft)
                         IntervalPicker(options: intervalOptions, selection: $intervalMinutes)
                         #if DEBUG
                         if intervalMinutes == 1 {
-                            Text("1 минута только для проверки уведомлений — в обычном режиме по умолчанию 10 минут.")
+                            Text(L("1 минута только для проверки уведомлений — в обычном режиме по умолчанию 10 минут.", "1 minute is only for testing notifications — normally the default is 10 minutes."))
                                 .font(.lora(12))
                                 .foregroundStyle(AppTheme.inkSoft)
                         }
@@ -77,10 +77,10 @@ struct NewSessionView: View {
                     }
 
                     ConditionsSummaryView(
-                        title: "Условия",
+                        title: L("Условия", "Conditions"),
                         chips: selectedConditions.map { ConditionChip(category: $0.key, option: $0.value) }
                             .sorted { $0.name < $1.name },
-                        actionTitle: selectedConditions.isEmpty ? "+ Добавить условие" : "Изменить условия",
+                        actionTitle: selectedConditions.isEmpty ? L("+ Добавить условие", "+ Add condition") : L("Изменить условия", "Change conditions"),
                         onTap: { showConditionsPicker = true }
                     )
                 }
@@ -93,7 +93,7 @@ struct NewSessionView: View {
                         initialConditions: selectedConditions
                     )
                 } label: {
-                    Text("Начать сессию")
+                    Text(L("Начать сессию", "Start session"))
                 }
                 .buttonStyle(.goblinPrimary)
                 .disabled(trimmedActivity.isEmpty)
@@ -101,12 +101,12 @@ struct NewSessionView: View {
 
                 // Recording a mood shouldn't require committing to a session.
                 VStack(spacing: 6) {
-                    Button("Как я сейчас?") {
+                    Button(L("Как я сейчас?", "How am I feeling?")) {
                         activityFieldFocused = false
                         showQuickCheckIn = true
                     }
                     .buttonStyle(.goblinSecondary)
-                    Text("Можно просто отметить состояние — без сессии.")
+                    Text(L("Можно просто отметить состояние — без сессии.", "You can just log your mood — no session needed."))
                         .font(.lora(12))
                         .foregroundStyle(AppTheme.inkSoft)
                 }
@@ -151,7 +151,7 @@ private struct CategoryPicker: View {
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                                         .stroke(isSelected ? AppTheme.forest : .clear, lineWidth: 2.5)
                                 )
-                            Text(category.label)
+                            Text(category.displayLabel)
                                 .font(.lora(11, weight: isSelected ? .semibold : .regular))
                                 .foregroundStyle(isSelected ? AppTheme.forest : AppTheme.inkSoft)
                         }
@@ -175,9 +175,12 @@ private struct IntervalPicker: View {
                 Button {
                     selection = minutes
                 } label: {
-                    Text("\(minutes) мин")
+                    Text(L("\(minutes) мин", "\(minutes) min"))
                         .font(.lora(14, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
+                        // Six chips share one row; keep "30 min" on one line.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
                         .background(

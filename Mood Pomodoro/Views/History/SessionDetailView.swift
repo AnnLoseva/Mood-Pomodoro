@@ -37,7 +37,7 @@ struct SessionDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text(session.activity)
+                Text(Ldata(session.activity))
                     .font(.lora(17, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
             }
@@ -52,9 +52,9 @@ struct SessionDetailView: View {
         }
         .goblinConfirmation(
             isPresented: $showDeleteConfirm,
-            title: "Удалить сессию?",
-            message: "Она исчезнет из истории и больше не попадёт в аналитику.",
-            confirmTitle: "Удалить",
+            title: L("Удалить сессию?", "Delete the session?"),
+            message: L("Она исчезнет из истории и больше не попадёт в аналитику.", "It will disappear from history and won't count in analytics anymore."),
+            confirmTitle: L("Удалить", "Delete"),
             isDestructive: true,
             onConfirm: {
                 sessionManager.delete(session)
@@ -96,9 +96,9 @@ struct SessionDetailView: View {
 
     private var durationCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            durationRow(icon: "⏱", title: "Всего", value: DurationFormatting.compact(session.totalDuration()))
-            durationRow(icon: "🌿", title: "Активно", value: DurationFormatting.compact(session.activeWorkDuration()))
-            durationRow(icon: "☕", title: "Перерыв", value: DurationFormatting.compact(session.breakDuration()))
+            durationRow(icon: "⏱", title: L("Всего", "Total"), value: DurationFormatting.compact(session.totalDuration()))
+            durationRow(icon: "🌿", title: L("Активно", "Active"), value: DurationFormatting.compact(session.activeWorkDuration()))
+            durationRow(icon: "☕", title: L("Перерыв", "Break"), value: DurationFormatting.compact(session.breakDuration()))
             durationRow(icon: "💬", title: "Check-ins", value: "\(session.checkIns?.count ?? 0)")
         }
         .padding(18)
@@ -119,7 +119,7 @@ struct SessionDetailView: View {
 
     private var trajectoryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Состояние во время сессии")
+            Text(L("Состояние во время сессии", "Mood during the session"))
                 .font(.lora(15, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
 
@@ -149,7 +149,7 @@ struct SessionDetailView: View {
                 AxisMarks { value in
                     AxisGridLine().foregroundStyle(AppTheme.border)
                     if let minutes = value.as(Int.self) {
-                        AxisValueLabel("\(minutes)м").font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
+                        AxisValueLabel(L("\(minutes)м", "\(minutes)m")).font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
                     }
                 }
             }

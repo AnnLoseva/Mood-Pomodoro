@@ -20,9 +20,9 @@ enum SupportStatus: String, Codable, Sendable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .taken: return "Принято"
-        case .notTaken: return "Не принято"
-        case .unknown: return "Не помню"
+        case .taken: return L("Принято", "Taken")
+        case .notTaken: return L("Не принято", "Not taken")
+        case .unknown: return L("Не помню", "Don't remember")
         }
     }
 

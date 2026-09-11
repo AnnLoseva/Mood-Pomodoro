@@ -105,47 +105,47 @@ struct ActivityEntrySheet: View {
     private var endDate: Date { DiaryDefaults.combine(day: day, time: end) }
 
     private var problem: String? {
-        if endDate <= startDate { return "Конец должен быть позже начала." }
-        if endDate > .now { return "Это время ещё не наступило." }
+        if endDate <= startDate { return L("Конец должен быть позже начала.", "The end must be after the start.") }
+        if endDate > .now { return L("Это время ещё не наступило.", "That time hasn't come yet.") }
         return nil
     }
 
     var body: some View {
         DiaryFormScaffold(
-            title: "🌿 Деятельность",
+            title: L("🌿 Деятельность", "🌿 Activity"),
             canSave: DiaryDefaults.trimmed(activity) != nil && problem == nil,
             hint: problem,
             onSave: save,
             onDelete: deleteAction
         ) {
-            DiaryFormSection("Чем занималась") {
-                TextField("Например, математика", text: $activity)
+            DiaryFormSection(L("Чем занималась", "What were you doing")) {
+                TextField(L("Например, математика", "For example, math"), text: $activity)
                     .font(.lora(15))
                     .diaryField()
                 FlowLayout(spacing: 8) {
                     ForEach(ActivityCategory.allCases) { category in
-                        DiaryChip(title: category.label, isSelected: activity == category.label) {
+                        DiaryChip(title: category.displayLabel, isSelected: activity == category.label) {
                             activity = category.label
                         }
                     }
                 }
             }
-            DiaryFormSection("Дата") {
-                DatePicker("Дата", selection: $day, in: ...Date.now, displayedComponents: .date)
+            DiaryFormSection(L("Дата", "Date")) {
+                DatePicker(L("Дата", "Date"), selection: $day, in: ...Date.now, displayedComponents: .date)
                     .diaryPicker()
             }
             HStack(spacing: 16) {
-                DiaryFormSection("Начало") {
-                    DatePicker("Начало", selection: $start, displayedComponents: .hourAndMinute)
+                DiaryFormSection(L("Начало", "Start")) {
+                    DatePicker(L("Начало", "Start"), selection: $start, displayedComponents: .hourAndMinute)
                         .diaryPicker()
                 }
-                DiaryFormSection("Конец") {
-                    DatePicker("Конец", selection: $end, displayedComponents: .hourAndMinute)
+                DiaryFormSection(L("Конец", "End")) {
+                    DatePicker(L("Конец", "End"), selection: $end, displayedComponents: .hourAndMinute)
                         .diaryPicker()
                 }
             }
-            DiaryFormSection("Заметка") {
-                TextField("Необязательно", text: $note, axis: .vertical)
+            DiaryFormSection(L("Заметка", "Note")) {
+                TextField(L("Необязательно", "Optional"), text: $note, axis: .vertical)
                     .font(.lora(15))
                     .diaryField()
             }
@@ -214,14 +214,14 @@ struct MoodEntrySheet: View {
 
     var body: some View {
         DiaryFormScaffold(
-            title: "🙂 Настроение",
+            title: L("🙂 Настроение", "🙂 Mood"),
             canSave: mood != nil && moment <= .now,
-            hint: moment > .now ? "Это время ещё не наступило." : nil,
+            hint: moment > .now ? L("Это время ещё не наступило.", "That time hasn't come yet.") : nil,
             onSave: save,
             onDelete: deleteAction
         ) {
             DiaryMomentPicker(moment: $moment)
-            DiaryFormSection("Настроение") {
+            DiaryFormSection(L("Настроение", "Mood")) {
                 HStack(spacing: 6) {
                     ForEach(Mood.orderedCases) { option in
                         Button {
@@ -251,18 +251,18 @@ struct MoodEntrySheet: View {
                 }
             }
             if mood != nil {
-                DiaryFormSection("Причина") {
+                DiaryFormSection(L("Причина", "Reason")) {
                     FlowLayout(spacing: 8) {
                         ForEach(reasons, id: \.self) { item in
-                            DiaryChip(title: item, isSelected: reason == item) {
+                            DiaryChip(title: Ldata(item), isSelected: reason == item) {
                                 reason = reason == item ? nil : item
                             }
                         }
                     }
                 }
             }
-            DiaryFormSection("Заметка") {
-                TextField("Необязательно", text: $note, axis: .vertical)
+            DiaryFormSection(L("Заметка", "Note")) {
+                TextField(L("Необязательно", "Optional"), text: $note, axis: .vertical)
                     .font(.lora(15))
                     .diaryField()
             }
@@ -325,15 +325,15 @@ struct SupportEntrySheet: View {
 
     var body: some View {
         DiaryFormScaffold(
-            title: "💊 Поддержка",
+            title: L("💊 Поддержка", "💊 Support"),
             canSave: status != nil,
             onSave: save
         ) {
-            DiaryFormSection("День") {
-                DatePicker("День", selection: $day, in: ...Date.now, displayedComponents: .date)
+            DiaryFormSection(L("День", "Day")) {
+                DatePicker(L("День", "Day"), selection: $day, in: ...Date.now, displayedComponents: .date)
                     .diaryPicker()
             }
-            DiaryFormSection("Отметка") {
+            DiaryFormSection(L("Отметка", "Mark")) {
                 VStack(spacing: 8) {
                     ForEach(SupportStatus.allCases) { option in
                         Button {
@@ -356,27 +356,27 @@ struct SupportEntrySheet: View {
                         .buttonStyle(.plain)
                     }
                 }
-                DiaryNote(text: "Если ничего не выбрать, день останется «не отмечен» — это не то же самое, что «не принято».")
+                DiaryNote(text: L("Если ничего не выбрать, день останется «не отмечен» — это не то же самое, что «не принято».", "If you choose nothing, the day stays “not recorded” — which is not the same as “not taken”."))
             }
-            DiaryFormSection("Время") {
-                Toggle("Знаю точное время", isOn: $knowsTime)
+            DiaryFormSection(L("Время", "Time")) {
+                Toggle(L("Знаю точное время", "I know the exact time"), isOn: $knowsTime)
                     .font(.lora(15))
                     .foregroundStyle(AppTheme.ink)
                     .tint(AppTheme.forest)
                 if knowsTime {
-                    DatePicker("Время", selection: $time, displayedComponents: .hourAndMinute)
+                    DatePicker(L("Время", "Time"), selection: $time, displayedComponents: .hourAndMinute)
                         .diaryPicker()
                 } else {
-                    DiaryNote(text: "Запишется как «в течение дня».")
+                    DiaryNote(text: L("Запишется как «в течение дня».", "Will be saved as “during the day”."))
                 }
             }
-            DiaryFormSection("Заметка") {
-                TextField("Необязательно", text: $note, axis: .vertical)
+            DiaryFormSection(L("Заметка", "Note")) {
+                TextField(L("Необязательно", "Optional"), text: $note, axis: .vertical)
                     .font(.lora(15))
                     .diaryField()
             }
             if hasExisting {
-                Button("Убрать отметку за этот день") {
+                Button(L("Убрать отметку за этот день", "Remove this day's mark")) {
                     store.clearSupport(on: day)
                     dismiss()
                 }
@@ -436,19 +436,19 @@ struct FactorEntrySheet: View {
 
     var body: some View {
         DiaryFormScaffold(
-            title: "☕ Фактор",
+            title: L("☕ Фактор", "☕ Factor"),
             canSave: selection != nil && moment <= .now,
-            hint: moment > .now ? "Это время ещё не наступило." : nil,
+            hint: moment > .now ? L("Это время ещё не наступило.", "That time hasn't come yet.") : nil,
             onSave: save,
             onDelete: deleteAction
         ) {
             DiaryMomentPicker(moment: $moment)
             ForEach(enabledCategories) { category in
-                DiaryFormSection("\(category.icon) \(category.name)") {
+                DiaryFormSection("\(category.icon) \(Ldata(category.name))") {
                     FlowLayout(spacing: 8) {
                         ForEach(category.enabledOptions) { option in
                             DiaryChip(
-                                title: option.name,
+                                title: Ldata(option.name),
                                 icon: option.icon,
                                 iconImageName: option.iconImageName ?? category.iconImageName,
                                 isSelected: optionID == option.id
@@ -518,15 +518,15 @@ struct NoteEntrySheet: View {
 
     var body: some View {
         DiaryFormScaffold(
-            title: "📝 Заметка",
+            title: L("📝 Заметка", "📝 Note"),
             canSave: DiaryDefaults.trimmed(text) != nil && moment <= .now,
-            hint: moment > .now ? "Это время ещё не наступило." : nil,
+            hint: moment > .now ? L("Это время ещё не наступило.", "That time hasn't come yet.") : nil,
             onSave: save,
             onDelete: deleteAction
         ) {
             DiaryMomentPicker(moment: $moment)
-            DiaryFormSection("Текст") {
-                TextField("Что хочется запомнить про этот момент", text: $text, axis: .vertical)
+            DiaryFormSection(L("Текст", "Text")) {
+                TextField(L("Что хочется запомнить про этот момент", "What do you want to remember about this moment"), text: $text, axis: .vertical)
                     .lineLimit(4...12)
                     .font(.lora(15))
                     .diaryField()
@@ -592,7 +592,7 @@ struct DiaryFormScaffold<Content: View>: View {
                                 .foregroundStyle(AppTheme.rustDeep)
                         }
                         if onDelete != nil {
-                            Button("Удалить запись") { confirmDelete = true }
+                            Button(L("Удалить запись", "Delete entry")) { confirmDelete = true }
                                 .font(.lora(14))
                                 .foregroundStyle(AppTheme.rustDeep)
                                 .padding(.top, 4)
@@ -609,12 +609,12 @@ struct DiaryFormScaffold<Content: View>: View {
                         .foregroundStyle(AppTheme.ink)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
+                    Button(L("Отмена", "Cancel")) { dismiss() }
                         .font(.lora(15))
                         .foregroundStyle(AppTheme.forest)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") {
+                    Button(L("Сохранить", "Save")) {
                         onSave()
                         dismiss()
                     }
@@ -623,12 +623,12 @@ struct DiaryFormScaffold<Content: View>: View {
                     .disabled(!canSave)
                 }
             }
-            .confirmationDialog("Удалить эту запись?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Удалить", role: .destructive) {
+            .confirmationDialog(L("Удалить эту запись?", "Delete this entry?"), isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button(L("Удалить", "Delete"), role: .destructive) {
                     onDelete?()
                     dismiss()
                 }
-                Button("Отмена", role: .cancel) {}
+                Button(L("Отмена", "Cancel"), role: .cancel) {}
             }
         }
         .presentationDetents([.large])
@@ -662,12 +662,12 @@ struct DiaryMomentPicker: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            DiaryFormSection("Дата") {
-                DatePicker("Дата", selection: $moment, in: ...Date.now, displayedComponents: .date)
+            DiaryFormSection(L("Дата", "Date")) {
+                DatePicker(L("Дата", "Date"), selection: $moment, in: ...Date.now, displayedComponents: .date)
                     .diaryPicker()
             }
-            DiaryFormSection("Время") {
-                DatePicker("Время", selection: $moment, displayedComponents: .hourAndMinute)
+            DiaryFormSection(L("Время", "Time")) {
+                DatePicker(L("Время", "Time"), selection: $moment, displayedComponents: .hourAndMinute)
                     .diaryPicker()
             }
         }

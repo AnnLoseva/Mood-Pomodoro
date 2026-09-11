@@ -34,21 +34,21 @@ struct DiaryDayView: View {
     private var emptyCard: some View {
         VStack(spacing: 10) {
             MoodImage(mood: .neutral, size: 64)
-            Text(isToday ? "Сегодня пока пусто" : "В этот день ничего не записано")
+            Text(isToday ? L("Сегодня пока пусто", "Nothing here yet today") : L("В этот день ничего не записано", "Nothing was recorded on this day"))
                 .font(.lora(17, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
             Text(isToday
-                 ? "Здесь появится то, что приложение заметит за день."
-                 : "Если что-то вспомнилось — можно добавить прямо в этот день.")
+                 ? L("Здесь появится то, что приложение заметит за день.", "What the app notices during the day will show up here.")
+                 : L("Если что-то вспомнилось — можно добавить прямо в этот день.", "If you remember something, you can add it right to this day."))
                 .font(.lora(13))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)
             if isToday {
-                Button("Как я сейчас?", action: onQuickMood)
+                Button(L("Как я сейчас?", "How am I feeling?"), action: onQuickMood)
                     .buttonStyle(.goblinSecondary)
                     .padding(.top, 4)
             } else {
-                Button("Добавить настроение") { onAdd(.mood(editing: nil)) }
+                Button(L("Добавить настроение", "Add mood")) { onAdd(.mood(editing: nil)) }
                     .buttonStyle(.goblinSecondary)
                     .padding(.top, 4)
             }
@@ -59,7 +59,7 @@ struct DiaryDayView: View {
     }
 
     private var moodCard: some View {
-        DiaryCard(title: "Моё состояние") {
+        DiaryCard(title: L("Моё состояние", "My mood")) {
             VStack(alignment: .leading, spacing: 14) {
                 if let average = summary.moodStats.average {
                     HStack(alignment: .center, spacing: 14) {
@@ -79,10 +79,10 @@ struct DiaryDayView: View {
                         }
                     }
                     if summary.moodStats.checkInCount < 3 {
-                        DiaryNote(text: "Отметок за день мало — это просто то, что было записано, а не картина всего дня.")
+                        DiaryNote(text: L("Отметок за день мало — это просто то, что было записано, а не картина всего дня.", "Only a few entries — this is just what was recorded, not the whole picture of the day."))
                     }
                 } else {
-                    DiaryNote(text: "Настроение за этот день не отмечено.")
+                    DiaryNote(text: L("Настроение за этот день не отмечено.", "No mood was recorded for this day."))
                 }
 
                 if summary.moodPoints.count >= 2 {
@@ -90,14 +90,14 @@ struct DiaryDayView: View {
                 }
 
                 if let firstDifficult = summary.moodStats.firstDifficultMoodAt {
-                    DiaryNote(text: "Первое 🥲 / 😭 — в \(DateFormatting.time(firstDifficult)).")
+                    DiaryNote(text: L("Первое 🥲 / 😭 — в \(DateFormatting.time(firstDifficult)).", "First 🥲 / 😭 at \(DateFormatting.time(firstDifficult))."))
                 }
 
                 if isToday {
-                    Button("Как я сейчас?", action: onQuickMood)
+                    Button(L("Как я сейчас?", "How am I feeling?"), action: onQuickMood)
                         .buttonStyle(.goblinSecondary)
                 } else {
-                    Button("Добавить настроение") { onAdd(.mood(editing: nil)) }
+                    Button(L("Добавить настроение", "Add mood")) { onAdd(.mood(editing: nil)) }
                         .buttonStyle(.goblinSecondary)
                 }
             }
@@ -144,7 +144,7 @@ struct DiaryDayView: View {
     }
 
     private var timelineCard: some View {
-        DiaryCard(title: "День", subtitle: "Нажми на запись, чтобы изменить") {
+        DiaryCard(title: L("День", "Day"), subtitle: L("Нажми на запись, чтобы изменить", "Tap an entry to edit it")) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(summary.timelineEvents) { event in
                     if let target = event.target {
@@ -170,14 +170,14 @@ struct DiaryDayView: View {
     }
 
     private var studyCard: some View {
-        DiaryCard(title: "📚 Учёба") {
+        DiaryCard(title: L("📚 Учёба", "📚 Study")) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) {
-                    stat(title: "Активно", value: DurationFormatting.compact(summary.totalActiveDuration))
+                    stat(title: L("Активно", "Active"), value: DurationFormatting.compact(summary.totalActiveDuration))
                     if summary.totalBreakDuration > 0 {
-                        stat(title: "Перерывы", value: DurationFormatting.compact(summary.totalBreakDuration))
+                        stat(title: L("Перерывы", "Breaks"), value: DurationFormatting.compact(summary.totalBreakDuration))
                     }
-                    stat(title: "Сессий", value: "\(summary.sessionCount)")
+                    stat(title: L("Сессий", "Sessions"), value: "\(summary.sessionCount)")
                 }
                 Divider().background(AppTheme.border)
                 VStack(spacing: 12) {
@@ -202,7 +202,7 @@ struct DiaryDayView: View {
     }
 
     private var conditionsCard: some View {
-        DiaryCard(title: "☕ Условия дня") {
+        DiaryCard(title: L("☕ Условия дня", "☕ Today's conditions")) {
             FlowLayout(spacing: 8) {
                 ForEach(summary.conditions, id: \.optionID) { entry in
                     let chip = entry.asChip
@@ -224,13 +224,13 @@ struct DiaryDayView: View {
     /// Tracking only — the card states the mark and offers to change it,
     /// nothing else. "Не отмечено" is shown as its own state.
     private var supportCard: some View {
-        DiaryCard(title: "💊 Ежедневная поддержка") {
+        DiaryCard(title: L("💊 Ежедневная поддержка", "💊 Daily support")) {
             HStack(spacing: 10) {
                 Text(supportLine)
                     .font(.lora(15, weight: summary.support == nil ? .regular : .medium))
                     .foregroundStyle(summary.support == nil ? AppTheme.inkSoft : AppTheme.ink)
                 Spacer(minLength: 8)
-                Button(summary.support == nil ? "Отметить" : "Изменить") { onAdd(.support) }
+                Button(summary.support == nil ? L("Отметить", "Mark") : L("Изменить", "Change")) { onAdd(.support) }
                     .font(.lora(13, weight: .medium))
                     .foregroundStyle(AppTheme.forest)
                     .buttonStyle(.plain)
@@ -239,21 +239,21 @@ struct DiaryDayView: View {
     }
 
     private var supportLine: String {
-        guard let support = summary.support else { return "— Не отмечено" }
-        let when = support.time.map(DateFormatting.time) ?? "в течение дня"
+        guard let support = summary.support else { return L("— Не отмечено", "— Not recorded") }
+        let when = support.time.map(DateFormatting.time) ?? L("в течение дня", "during the day")
         return "\(support.status.glyph) \(support.status.label) · \(when)"
     }
 
     private var cycleCard: some View {
-        DiaryCard(title: "🌸 Цикл") {
+        DiaryCard(title: L("🌸 Цикл", "🌸 Cycle")) {
             VStack(alignment: .leading, spacing: 10) {
                 if summary.isPeriodDay {
-                    Text(summary.cycleDay.map { "🌸 Менструация — день \($0)" } ?? "🌸 Менструация")
+                    Text(summary.cycleDay.map { L("🌸 Менструация — день \($0)", "🌸 Period — day \($0)") } ?? L("🌸 Менструация", "🌸 Period"))
                         .font(.lora(15, weight: .medium))
                         .foregroundStyle(AppTheme.ink)
                 } else if let day = summary.cycleDay {
                     HStack(spacing: 8) {
-                        Text("День цикла")
+                        Text(L("День цикла", "Cycle day"))
                             .font(.lora(14))
                             .foregroundStyle(AppTheme.inkSoft)
                         Spacer()
@@ -262,7 +262,7 @@ struct DiaryDayView: View {
                             .foregroundStyle(AppTheme.ink)
                     }
                 } else {
-                    DiaryNote(text: "Цикл не отмечен — можно вести, если хочется, и не вести, если нет.")
+                    DiaryNote(text: L("Цикл не отмечен — можно вести, если хочется, и не вести, если нет.", "No cycle recorded — track it if you'd like to, skip it if not."))
                 }
 
                 ForEach(summary.cycleEvents, id: \.self) { event in
@@ -271,7 +271,7 @@ struct DiaryDayView: View {
                         .foregroundStyle(AppTheme.inkSoft)
                 }
 
-                Button(summary.cycleEvents.isEmpty ? "Отметить" : "Изменить отметку") { onAdd(.cycle) }
+                Button(summary.cycleEvents.isEmpty ? L("Отметить", "Mark") : L("Изменить отметку", "Change mark")) { onAdd(.cycle) }
                     .font(.lora(13, weight: .medium))
                     .foregroundStyle(AppTheme.forest)
                     .buttonStyle(.plain)

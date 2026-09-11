@@ -51,10 +51,10 @@ struct DiaryMonthView: View {
     private var emptyCard: some View {
         VStack(spacing: 10) {
             MoodImage(mood: .neutral, size: 64)
-            Text("В этом месяце пока пусто")
+            Text(L("В этом месяце пока пусто", "Nothing this month yet"))
                 .font(.lora(17, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Text("Картина месяца соберётся сама из check-in'ов и сессий. Забытое можно добавить задним числом — нажми на день.")
+            Text(L("Картина месяца соберётся сама из check-in'ов и сессий. Забытое можно добавить задним числом — нажми на день.", "The month's picture builds itself from check-ins and sessions. Anything you forgot can be added afterwards — tap a day."))
                 .font(.lora(13))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)
@@ -65,7 +65,7 @@ struct DiaryMonthView: View {
     }
 
     private var calendarCard: some View {
-        DiaryCard(title: "Календарь", subtitle: "Цвет — среднее настроение дня") {
+        DiaryCard(title: L("Календарь", "Calendar"), subtitle: L("Цвет — среднее настроение дня", "Color = the day's average mood")) {
             VStack(alignment: .leading, spacing: 14) {
                 MonthCalendarGrid(days: summary.days, onSelectDay: onSelectDay)
                 MoodColorLegend()
@@ -74,7 +74,7 @@ struct DiaryMonthView: View {
     }
 
     private var supportCard: some View {
-        DiaryCard(title: "💊 Ежедневная поддержка") {
+        DiaryCard(title: L("💊 Ежедневная поддержка", "💊 Daily support")) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(summary.supportStats) { stat in
                     HStack(spacing: 10) {
@@ -86,7 +86,7 @@ struct DiaryMonthView: View {
                             Text(stat.status.label)
                                 .font(.lora(14))
                                 .foregroundStyle(AppTheme.ink)
-                            Text("\(stat.dayCount) дн.")
+                            Text(L("\(stat.dayCount) дн.", "\(stat.dayCount) d"))
                                 .font(.lora(12))
                                 .foregroundStyle(AppTheme.inkSoft)
                         }
@@ -99,19 +99,19 @@ struct DiaryMonthView: View {
                                 .font(.lora(14, weight: .semibold))
                                 .foregroundStyle(AppTheme.forest)
                         } else {
-                            Text(stat.checkInCount == 0 ? "нет check-in" : "\(stat.checkInCount) check-in")
+                            Text(stat.checkInCount == 0 ? L("нет check-in", "no check-ins") : "\(stat.checkInCount) check-in")
                                 .font(.lora(12))
                                 .foregroundStyle(AppTheme.inkSoft)
                         }
                     }
                 }
-                DiaryNote(text: "Среднее настроение в дни с такой отметкой — наблюдение по твоим данным, не вывод о действии поддержки. Дни без отметки сюда не входят.")
+                DiaryNote(text: L("Среднее настроение в дни с такой отметкой — наблюдение по твоим данным, не вывод о действии поддержки. Дни без отметки сюда не входят.", "Average mood on days with this mark — an observation from your own data, not a conclusion about what the support does. Days without a mark aren't included."))
             }
         }
     }
 
     private var moodCard: some View {
-        DiaryCard(title: "🌿 Состояние") {
+        DiaryCard(title: L("🌿 Состояние", "🌿 Mood")) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     MoodAverageLabel(average: summary.moodStats.average)
@@ -176,14 +176,14 @@ struct DiaryMonthView: View {
     }
 
     private var studyCard: some View {
-        DiaryCard(title: "📚 Учёба") {
+        DiaryCard(title: L("📚 Учёба", "📚 Study")) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) {
-                    stat(title: "Всего активно", value: DurationFormatting.compact(summary.totalActiveDuration))
-                    stat(title: "Сессий", value: "\(summary.sessionCount)")
+                    stat(title: L("Всего активно", "Total active"), value: DurationFormatting.compact(summary.totalActiveDuration))
+                    stat(title: L("Сессий", "Sessions"), value: "\(summary.sessionCount)")
                 }
                 if summary.activities.isEmpty {
-                    DiaryNote(text: "Сессий в этом месяце пока не было.")
+                    DiaryNote(text: L("Сессий в этом месяце пока не было.", "No sessions this month yet."))
                 } else {
                     Divider().background(AppTheme.border)
                     VStack(spacing: 12) {
@@ -191,7 +191,7 @@ struct DiaryMonthView: View {
                             ActivityStatRow(stats: activity)
                         }
                     }
-                    DiaryNote(text: "Это твои наблюдения за месяц, а не оценка занятий.")
+                    DiaryNote(text: L("Это твои наблюдения за месяц, а не оценка занятий.", "These are your observations for the month, not a grade of your work."))
                 }
             }
         }
@@ -213,14 +213,14 @@ struct DiaryMonthView: View {
         let categories = summary.factors.filter { category in
             category.optionStats.contains { $0.checkInCount > 0 }
         }
-        return DiaryCard(title: "☕ Факторы") {
+        return DiaryCard(title: L("☕ Факторы", "☕ Factors")) {
             if categories.isEmpty {
-                DiaryNote(text: "Пока нет условий, записанных вместе с check-in'ами.")
+                DiaryNote(text: L("Пока нет условий, записанных вместе с check-in'ами.", "No conditions recorded with check-ins yet."))
             } else {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(categories) { category in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("\(category.categoryIcon) \(category.categoryName)")
+                            Text("\(category.categoryIcon) \(Ldata(category.categoryName))")
                                 .font(.lora(14, weight: .medium))
                                 .foregroundStyle(AppTheme.inkSoft)
                             ForEach(topOptions(of: category)) { option in
@@ -228,7 +228,7 @@ struct DiaryMonthView: View {
                             }
                         }
                     }
-                    DiaryNote(text: "Так это выглядело в твоих наблюдениях — не вывод о причинах.")
+                    DiaryNote(text: L("Так это выглядело в твоих наблюдениях — не вывод о причинах.", "This is how it looked in your observations — not a conclusion about causes."))
                 }
             }
         }
@@ -245,7 +245,7 @@ struct DiaryMonthView: View {
     private func factorRow(_ option: FactorOptionStatistics) -> some View {
         HStack(spacing: 10) {
             FactorIconView(icon: option.optionIcon, iconImageName: option.optionIconImageName, size: 20)
-            Text(option.optionName)
+            Text(Ldata(option.optionName))
                 .font(.lora(14))
                 .foregroundStyle(AppTheme.ink)
             Spacer(minLength: 8)
@@ -261,9 +261,9 @@ struct DiaryMonthView: View {
     }
 
     private var cycleCard: some View {
-        DiaryCard(title: "🌸 Цикл") {
+        DiaryCard(title: L("🌸 Цикл", "🌸 Cycle")) {
             if summary.cycleBuckets.isEmpty {
-                DiaryNote(text: "Цикл в этом месяце не отмечен.")
+                DiaryNote(text: L("Цикл в этом месяце не отмечен.", "No cycle recorded this month."))
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(summary.cycleBuckets) { bucket in
@@ -278,13 +278,13 @@ struct DiaryMonthView: View {
                                     .font(.lora(14, weight: .semibold))
                                     .foregroundStyle(AppTheme.forest)
                             } else {
-                                Text(bucket.checkInCount == 0 ? "нет данных" : "\(bucket.checkInCount) check-in")
+                                Text(bucket.checkInCount == 0 ? L("нет данных", "no data") : "\(bucket.checkInCount) check-in")
                                     .font(.lora(12))
                                     .foregroundStyle(AppTheme.inkSoft)
                             }
                         }
                     }
-                    DiaryNote(text: "Просто наблюдения по дням цикла — без медицинских выводов.")
+                    DiaryNote(text: L("Просто наблюдения по дням цикла — без медицинских выводов.", "Just observations by cycle day — no medical conclusions."))
                 }
             }
         }
@@ -358,13 +358,15 @@ struct MonthCalendarGrid: View {
 
     private func accessibilityText(for day: DayMoodSummary) -> String {
         let date = DateFormatting.fullDate(day.date)
-        guard let average = day.averageMood else { return "\(date), нет данных" }
+        guard let average = day.averageMood else { return L("\(date), нет данных", "\(date), no data") }
         return "\(date), \(Mood.nearest(to: average).label), \(String(format: "%.1f", average)), \(day.checkInCount) check-in"
     }
 
     /// Weekday headers rotated to the user's locale (Mon-first in Russian).
     private var weekdaySymbols: [String] {
-        let symbols = calendar.shortWeekdaySymbols
+        var localized = calendar
+        localized.locale = AppLanguage.current.locale
+        let symbols = localized.shortWeekdaySymbols
         let shift = calendar.firstWeekday - 1
         return Array(symbols[shift...] + symbols[..<shift])
     }
@@ -386,7 +388,7 @@ struct MoodColorLegend: View {
                     RoundedRectangle(cornerRadius: 4, style: .continuous).fill(item.color)
                 }
             }
-            swatch(label: "Нет данных") {
+            swatch(label: L("Нет данных", "No data")) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(AppTheme.parchment.opacity(0.35))
                     .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(AppTheme.border, lineWidth: 1))

@@ -24,13 +24,13 @@ struct ConditionChip: Identifiable, Hashable {
         self.id = category.id
         self.icon = category.icon
         self.iconImageName = option.iconImageName ?? category.iconImageName
-        self.name = option.name
+        self.name = Ldata(option.name)
     }
 }
 
 extension ConditionSnapshotEntry {
     var asChip: ConditionChip {
-        ConditionChip(id: categoryID, icon: categoryIcon, iconImageName: resolvedIconImageName, name: optionName)
+        ConditionChip(id: categoryID, icon: categoryIcon, iconImageName: resolvedIconImageName, name: Ldata(optionName))
     }
 }
 

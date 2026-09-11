@@ -15,7 +15,7 @@ struct FactorsAnalyticsView: View {
         ScrollView {
             VStack(spacing: 12) {
                 if categories.isEmpty {
-                    Text("Нет условий")
+                    Text(L("Нет условий", "No conditions"))
                         .font(.lora(14))
                         .foregroundStyle(AppTheme.inkSoft)
                 } else {
@@ -23,7 +23,7 @@ struct FactorsAnalyticsView: View {
                         NavigationLink(value: category) {
                             HStack(spacing: 12) {
                                 FactorIconView(icon: category.icon, iconImageName: category.iconImageName, size: 30)
-                                Text(category.name)
+                                Text(Ldata(category.name))
                                     .font(.lora(16, weight: .medium))
                                     .foregroundStyle(AppTheme.ink)
                                 Spacer()

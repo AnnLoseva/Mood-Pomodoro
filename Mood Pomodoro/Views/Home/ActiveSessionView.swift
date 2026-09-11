@@ -22,22 +22,22 @@ struct ActiveSessionView: View {
             Spacer(minLength: 0)
             VStack(spacing: 24) {
                 VStack(spacing: 6) {
-                    Text(session.activity)
+                    Text(Ldata(session.activity))
                         .font(.lora(19, weight: .medium))
                         .foregroundStyle(AppTheme.inkSoft)
                     SessionClock(session: session)
                     if session.isPaused {
                         VStack(spacing: 4) {
-                            Label("🌙 Перерыв", systemImage: "moon.fill")
+                            Label(L("🌙 Перерыв", "🌙 Break"), systemImage: "moon.fill")
                                 .font(.lora(15, weight: .medium))
                                 .foregroundStyle(AppTheme.rustDeep)
                             BreakClock(session: session)
-                            Text("Ты можешь спокойно отдохнуть.")
+                            Text(L("Ты можешь спокойно отдохнуть.", "Take your time and rest."))
                                 .font(.lora(13))
                                 .foregroundStyle(AppTheme.inkSoft)
                         }
                     } else {
-                        Text("🟢 Работа")
+                        Text(L("🟢 Работа", "🟢 Working"))
                             .font(.lora(13, weight: .medium))
                             .foregroundStyle(AppTheme.forest)
                     }
@@ -52,9 +52,9 @@ struct ActiveSessionView: View {
                 }
 
                 ConditionsSummaryView(
-                    title: "Условия",
+                    title: L("Условия", "Conditions"),
                     chips: session.activeConditions(asOf: .now).map(\.asChip),
-                    actionTitle: "Изменить",
+                    actionTitle: L("Изменить", "Change"),
                     onTap: { openConditionsPicker() }
                 )
 
@@ -62,7 +62,7 @@ struct ActiveSessionView: View {
                     Button {
                         showQuickCheckIn = true
                     } label: {
-                        Text("Как я сейчас?")
+                        Text(L("Как я сейчас?", "How am I feeling?"))
                     }
                     .buttonStyle(.goblinPrimary)
                 }
@@ -71,7 +71,7 @@ struct ActiveSessionView: View {
                     Button {
                         session.isPaused ? sessionManager.resume() : sessionManager.pause()
                     } label: {
-                        Label(session.isPaused ? "Продолжить" : "Пауза",
+                        Label(session.isPaused ? L("Продолжить", "Resume") : L("Пауза", "Pause"),
                               systemImage: session.isPaused ? "play.fill" : "pause.fill")
                     }
                     .buttonStyle(.goblinSecondary)
@@ -79,12 +79,12 @@ struct ActiveSessionView: View {
                     Button {
                         showFinishConfirm = true
                     } label: {
-                        Label("Завершить", systemImage: "checkmark.circle")
+                        Label(L("Завершить", "Finish"), systemImage: "checkmark.circle")
                     }
                     .buttonStyle(.goblinSecondary)
                 }
 
-                Button("Отменить сессию", role: .destructive) {
+                Button(L("Отменить сессию", "Cancel session"), role: .destructive) {
                     showCancelConfirm = true
                 }
                 .font(.lora(13))
@@ -105,15 +105,15 @@ struct ActiveSessionView: View {
         }
         .goblinConfirmation(
             isPresented: $showFinishConfirm,
-            title: "Завершить сессию?",
-            confirmTitle: "Завершить",
+            title: L("Завершить сессию?", "Finish the session?"),
+            confirmTitle: L("Завершить", "Finish"),
             onConfirm: { sessionManager.finish() }
         )
         .goblinConfirmation(
             isPresented: $showCancelConfirm,
-            title: "Отменить сессию?",
-            message: "Сессия не будет сохранена",
-            confirmTitle: "Отменить сессию",
+            title: L("Отменить сессию?", "Cancel the session?"),
+            message: L("Сессия не будет сохранена", "The session won't be saved"),
+            confirmTitle: L("Отменить сессию", "Cancel session"),
             isDestructive: true,
             onConfirm: { sessionManager.cancel() }
         )

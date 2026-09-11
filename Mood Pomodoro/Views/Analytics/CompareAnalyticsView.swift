@@ -8,9 +8,10 @@ import SwiftData
 
 struct CompareAnalyticsView: View {
     private enum Mode: String, CaseIterable, Identifiable {
-        case pair = "Сравнить"
-        case combination = "Комбинация"
+        case pair
+        case combination
         var id: String { rawValue }
+        var title: String { self == .pair ? L("Сравнить", "Compare") : L("Комбинация", "Combination") }
     }
 
     @Query(sort: \FactorCategory.sortOrder) private var allCategories: [FactorCategory]
@@ -23,13 +24,13 @@ struct CompareAnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Picker("Режим", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+                Picker(L("Режим", "Mode"), selection: $mode) {
+                    ForEach(Mode.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
 
                 if categories.isEmpty {
-                    Text("Нет условий для сравнения")
+                    Text(L("Нет условий для сравнения", "No conditions to compare"))
                         .font(.lora(14))
                         .foregroundStyle(AppTheme.inkSoft)
                 } else if mode == .pair {
@@ -60,30 +61,30 @@ private struct PairCompareView: View {
     var body: some View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
-                pickerRow(title: "Фактор") {
+                pickerRow(title: L("Фактор", "Factor")) {
                     Picker("", selection: $category) {
-                        Text("Выбери").tag(FactorCategory?.none)
+                        Text(L("Выбери", "Choose")).tag(FactorCategory?.none)
                         ForEach(categories) { cat in
-                            Text("\(cat.icon) \(cat.name)").tag(FactorCategory?.some(cat))
+                            Text("\(cat.icon) \(Ldata(cat.name))").tag(FactorCategory?.some(cat))
                         }
                     }
                 }
                 .onChange(of: category) { _, _ in optionA = nil; optionB = nil }
 
                 if let category {
-                    pickerRow(title: "Значение A") {
+                    pickerRow(title: L("Значение A", "Value A")) {
                         optionPicker(selection: $optionA, options: category.enabledOptions)
                     }
-                    pickerRow(title: "Значение B") {
+                    pickerRow(title: L("Значение B", "Value B")) {
                         optionPicker(selection: $optionB, options: category.enabledOptions)
                     }
                 }
 
                 if activityNames.count > 1 {
-                    pickerRow(title: "Активность") {
+                    pickerRow(title: L("Активность", "Activity")) {
                         Picker("", selection: $activityFilter) {
-                            Text("Все").tag(String?.none)
-                            ForEach(activityNames, id: \.self) { Text($0).tag(String?.some($0)) }
+                            Text(L("Все", "All")).tag(String?.none)
+                            ForEach(activityNames, id: \.self) { Text(Ldata($0)).tag(String?.some($0)) }
                         }
                     }
                 }
@@ -105,9 +106,9 @@ private struct PairCompareView: View {
 
     private func optionPicker(selection: Binding<FactorOption?>, options: [FactorOption]) -> some View {
         Picker("", selection: selection) {
-            Text("Выбери").tag(FactorOption?.none)
+            Text(L("Выбери", "Choose")).tag(FactorOption?.none)
             ForEach(options) { option in
-                Text(option.name).tag(FactorOption?.some(option))
+                Text(Ldata(option.name)).tag(FactorOption?.some(option))
             }
         }
     }
@@ -138,22 +139,22 @@ private struct ComparisonResultView: View {
             }
 
             if result.canCompare, let diff = result.moodDifference {
-                Text("Разница: \(String(format: "%+.1f", diff))")
+                Text(L("Разница: \(String(format: "%+.1f", diff))", "Difference: \(String(format: "%+.1f", diff))"))
                     .font(.lora(15, weight: .semibold))
                     .foregroundStyle(diff >= 0 ? AppTheme.forest : AppTheme.rustDeep)
 
                 if let a = result.optionA.averageMinutesToDifficult, let b = result.optionB.averageMinutesToDifficult {
                     VStack(spacing: 4) {
-                        Text("Среднее время до 🥲 / 😭")
+                        Text(L("Среднее время до 🥲 / 😭", "Avg. time until 🥲 / 😭"))
                             .font(.lora(12))
                             .foregroundStyle(AppTheme.inkSoft)
-                        Text("\(result.optionA.optionName): \(Int(a)) мин   ·   \(result.optionB.optionName): \(Int(b)) мин")
+                        Text(L("\(Ldata(result.optionA.optionName)): \(Int(a)) мин   ·   \(Ldata(result.optionB.optionName)): \(Int(b)) мин", "\(Ldata(result.optionA.optionName)): \(Int(a)) min   ·   \(Ldata(result.optionB.optionName)): \(Int(b)) min"))
                             .font(.lora(13, weight: .medium))
                             .foregroundStyle(AppTheme.ink)
                     }
                 }
             } else {
-                Text("Недостаточно данных для сравнения")
+                Text(L("Недостаточно данных для сравнения", "Not enough data to compare"))
                     .font(.lora(13))
                     .foregroundStyle(AppTheme.inkSoft)
             }
@@ -164,7 +165,7 @@ private struct ComparisonResultView: View {
 
     private func resultTile(_ stats: FactorOptionStatistics) -> some View {
         VStack(spacing: 4) {
-            Text(stats.optionName)
+            Text(Ldata(stats.optionName))
                 .font(.lora(15, weight: .medium))
                 .foregroundStyle(AppTheme.ink)
             if let avg = stats.averageMood {
@@ -199,9 +200,9 @@ private struct CombinationView: View {
         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 ConditionsSummaryView(
-                    title: "Условия комбинации",
+                    title: L("Условия комбинации", "Combination conditions"),
                     chips: selection.map { ConditionChip(category: $0.key, option: $0.value) },
-                    actionTitle: selection.isEmpty ? "+ Добавить условие" : "Изменить",
+                    actionTitle: selection.isEmpty ? L("+ Добавить условие", "+ Add condition") : L("Изменить", "Change"),
                     onTap: { showPicker = true }
                 )
             }
@@ -211,7 +212,7 @@ private struct CombinationView: View {
             if !pairs.isEmpty {
                 let stats = AnalyticsService.combinationStatistics(selections: pairs, sessions: sessions)
                 VStack(spacing: 8) {
-                    Text(stats.optionName)
+                    Text(Ldata(stats.optionName))
                         .font(.lora(16, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                         .multilineTextAlignment(.center)
@@ -223,12 +224,12 @@ private struct CombinationView: View {
                             .font(.lora(12))
                             .foregroundStyle(AppTheme.inkSoft)
                         if let minutes = stats.averageMinutesToDifficult {
-                            Text("Среднее время до 🥲: \(Int(minutes)) мин")
+                            Text(L("Среднее время до 🥲: \(Int(minutes)) мин", "Avg. time until 🥲: \(Int(minutes)) min"))
                                 .font(.lora(12))
                                 .foregroundStyle(AppTheme.inkSoft)
                         }
                     } else {
-                        Text("\(stats.checkInCount) check-ins — недостаточно данных")
+                        Text(L("\(stats.checkInCount) check-ins — недостаточно данных", "\(stats.checkInCount) check-ins — not enough data"))
                             .font(.lora(13))
                             .foregroundStyle(AppTheme.inkSoft)
                     }

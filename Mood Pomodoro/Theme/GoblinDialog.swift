@@ -46,7 +46,7 @@ private struct GoblinConfirmationModifier: ViewModifier {
                             }
                             .buttonStyle(isDestructive ? .goblinDestructive : .goblinPrimary)
 
-                            Button("Отмена") { isPresented = false }
+                            Button(L("Отмена", "Cancel")) { isPresented = false }
                                 .buttonStyle(.goblinSecondary)
                         }
                     }

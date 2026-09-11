@@ -11,15 +11,25 @@ import SwiftData
 /// of charts.
 struct AnalyticsView: View {
     private enum Section: String, CaseIterable, Identifiable {
-        case overview = "Обзор"
-        case conditions = "Условия"
-        case activities = "Активности"
-        case compare = "Сравнить"
+        case overview
+        case conditions
+        case activities
+        case compare
         var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .overview: return L("Обзор", "Overview")
+            case .conditions: return L("Условия", "Conditions")
+            case .activities: return L("Активности", "Activities")
+            case .compare: return L("Сравнить", "Compare")
+            }
+        }
     }
 
     @Query private var allSessions: [FocusSession]
     @State private var section: Section = .overview
+    @State private var showExport = false
 
     private var finishedOrActive: [FocusSession] { allSessions }
     private var hasAnyCheckIns: Bool { allSessions.contains { !($0.checkIns ?? []).isEmpty } }
@@ -48,10 +58,22 @@ struct AnalyticsView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Аналитика")
+                    Text(L("Аналитика", "Analytics"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showExport = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .foregroundStyle(AppTheme.forest)
+                    .accessibilityLabel(L("Экспорт", "Export"))
+                }
+            }
+            .sheet(isPresented: $showExport) {
+                ExportSheet()
             }
         }
     }
@@ -64,7 +86,7 @@ struct AnalyticsView: View {
                     Button {
                         section = item
                     } label: {
-                        Text(item.rawValue)
+                        Text(item.title)
                             .font(.lora(13, weight: isSelected ? .semibold : .regular))
                             .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
                             .padding(.horizontal, 14)
@@ -84,10 +106,10 @@ struct AnalyticsView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             MoodImage(mood: .neutral, size: 72)
-            Text("Пока мало данных")
+            Text(L("Пока мало данных", "Not much data yet"))
                 .font(.lora(19, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Text("Аналитика появится после нескольких сессий")
+            Text(L("Аналитика появится после нескольких сессий", "Analytics will appear after a few sessions"))
                 .font(.lora(14))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)

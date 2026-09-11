@@ -71,7 +71,7 @@ enum NotificationScheduler {
             let actions = texts.enumerated().map { index, reason in
                 UNNotificationAction(
                     identifier: reasonActionIdentifier(mood: mood, index: index),
-                    title: reason,
+                    title: Ldata(reason),
                     options: []
                 )
             }
@@ -163,8 +163,8 @@ enum NotificationScheduler {
     /// texts; the body is not a fake button list.
     static func scheduleReasonPrompt(sessionID: UUID, checkInID: UUID, mood: Mood, reasons: [String]) async {
         let content = UNMutableNotificationContent()
-        content.title = "\(mood.emoji) Почему?"
-        content.body = "Выбери причину"
+        content.title = L("\(mood.emoji) Почему?", "\(mood.emoji) Why?")
+        content.body = L("Выбери причину", "Pick a reason")
         content.categoryIdentifier = reasonCategory(for: mood)
         content.threadIdentifier = sessionID.uuidString
         content.sound = .default
@@ -210,8 +210,8 @@ enum NotificationScheduler {
         scheduledTimestamp: TimeInterval
     ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = "Как ты?"
-        content.body = "Нажми, чтобы ответить"
+        content.title = L("Как ты?", "How are you?")
+        content.body = L("Нажми, чтобы ответить", "Tap to answer")
         content.categoryIdentifier = checkInCategory
         content.threadIdentifier = sessionID.uuidString
         content.sound = .default

@@ -34,10 +34,10 @@ struct HistoryView: View {
                 if finishedSessions.isEmpty {
                     VStack(spacing: 10) {
                         MoodImage(mood: .neutral, size: 72)
-                        Text("Пока нет истории")
+                        Text(L("Пока нет истории", "No history yet"))
                             .font(.lora(19, weight: .semibold))
                             .foregroundStyle(AppTheme.ink)
-                        Text("Заверши первую сессию, чтобы увидеть её здесь")
+                        Text(L("Заверши первую сессию, чтобы увидеть её здесь", "Finish your first session to see it here"))
                             .font(.lora(14))
                             .foregroundStyle(AppTheme.inkSoft)
                             .multilineTextAlignment(.center)
@@ -64,7 +64,7 @@ struct HistoryView: View {
                                             Button(role: .destructive) {
                                                 sessionManager.delete(session)
                                             } label: {
-                                                Label("Удалить", systemImage: "trash")
+                                                Label(L("Удалить", "Delete"), systemImage: "trash")
                                             }
                                         }
                                     }
@@ -79,7 +79,7 @@ struct HistoryView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("История")
+                    Text(L("История", "History"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
@@ -113,7 +113,7 @@ private struct SessionRow: View {
                     .frame(width: 44, height: 44)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(session.activity)
+                Text(Ldata(session.activity))
                     .font(.lora(17, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
                 Text(DateFormatting.fullDate(session.startDate))
@@ -145,11 +145,11 @@ private struct SessionRow: View {
     private var durationLine: String {
         let total = DurationFormatting.compact(session.totalDuration())
         let count = session.checkIns?.count ?? 0
-        let checkIns = "\(count) check-in"
+        let checkIns = checkInCount(count)
         if session.breakDuration() > 0 {
             let active = DurationFormatting.compact(session.activeWorkDuration())
             let pause = DurationFormatting.compact(session.breakDuration())
-            return "\(total) · \(active) активно · \(pause) перерыв · \(checkIns)"
+            return L("\(total) · \(active) активно · \(pause) перерыв · \(checkIns)", "\(total) · \(active) active · \(pause) break · \(checkIns)")
         }
         return "\(total) · \(checkIns)"
     }

@@ -47,7 +47,7 @@ struct ConditionsPickerSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(activeCategory?.name ?? "Условия")
+                    Text(activeCategory.map { Ldata($0.name) } ?? L("Условия", "Conditions"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
@@ -60,13 +60,13 @@ struct ConditionsPickerSheet: View {
                         }
                         .foregroundStyle(AppTheme.forest)
                     } else {
-                        Button("Закрыть") { dismiss() }
+                        Button(L("Закрыть", "Close")) { dismiss() }
                             .foregroundStyle(AppTheme.forest)
                     }
                 }
                 if activeCategory == nil {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Готово") {
+                        Button(L("Готово", "Done")) {
                             onDone()
                             dismiss()
                         }
@@ -94,12 +94,12 @@ private struct CategoryListView: View {
                     } label: {
                         HStack(spacing: 12) {
                             FactorIconView(icon: category.icon, iconImageName: category.iconImageName, size: 30)
-                            Text(category.name)
+                            Text(Ldata(category.name))
                                 .font(.lora(16, weight: .medium))
                                 .foregroundStyle(AppTheme.ink)
                             Spacer()
                             if let chosen = selection[category] {
-                                Text(chosen.name)
+                                Text(Ldata(chosen.name))
                                     .font(.lora(14))
                                     .foregroundStyle(AppTheme.forest)
                             }
@@ -145,7 +145,7 @@ private struct OptionListView: View {
                                 iconImageName: option.iconImageName ?? category.iconImageName,
                                 size: 26
                             )
-                            Text(option.name)
+                            Text(Ldata(option.name))
                                 .font(.lora(16, weight: isSelected ? .semibold : .regular))
                                 .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
                             Spacer()
@@ -168,7 +168,7 @@ private struct OptionListView: View {
                 }
 
                 if selected != nil {
-                    Button("Не указывать", role: .destructive, action: onClear)
+                    Button(L("Не указывать", "Clear"), role: .destructive, action: onClear)
                         .font(.lora(13))
                         .foregroundStyle(AppTheme.rustDeep)
                         .padding(.top, 4)

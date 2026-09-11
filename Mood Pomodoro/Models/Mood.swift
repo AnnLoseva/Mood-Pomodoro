@@ -85,11 +85,11 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
 
     var label: String {
         switch self {
-        case .veryGood: return "Очень хорошо"
-        case .good: return "Хорошо"
-        case .neutral: return "Нормально"
-        case .tired: return "Тяжеловато"
-        case .veryBad: return "Очень плохо"
+        case .veryGood: return L("Очень хорошо", "Very good")
+        case .good: return L("Хорошо", "Good")
+        case .neutral: return L("Нормально", "Okay")
+        case .tired: return L("Тяжеловато", "A bit hard")
+        case .veryBad: return L("Очень плохо", "Very bad")
         }
     }
 

@@ -112,7 +112,7 @@ enum AnalyticsService {
         for point in trajectory {
             runningBest = max(runningBest, point.averageMood)
             if runningBest - point.averageMood >= 0.7, point.sampleCount >= minimumSampleSize {
-                return "В твоих сессиях состояние обычно начинает снижаться примерно после \(point.minuteBucketStart) минут."
+                return L("В твоих сессиях состояние обычно начинает снижаться примерно после \(point.minuteBucketStart) минут.", "In your sessions, mood usually starts to dip after about \(point.minuteBucketStart) minutes.")
             }
         }
         return nil
@@ -242,7 +242,7 @@ enum AnalyticsService {
         let checkIns = sessions.flatMap { $0.checkIns ?? [] }.filter { checkIn in
             selections.allSatisfy { checkIn.hasCondition(categoryID: $0.category.id, optionID: $0.option.id) }
         }
-        let name = selections.map(\.option.name).joined(separator: " + ")
+        let name = selections.map { Ldata($0.option.name) }.joined(separator: " + ")
         let icon = selections.first?.category.icon ?? "🍄"
         return FactorOptionStatistics(
             id: UUID(),

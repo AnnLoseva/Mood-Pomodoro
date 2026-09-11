@@ -36,7 +36,7 @@ struct FactorDetailView: View {
                 .padding(18)
                 .parchmentCard()
 
-                Text("Показывает связь, не причину: среднее состояние в твоих наблюдениях, а не вывод о том, что помогает.")
+                Text(L("Показывает связь, не причину: среднее состояние в твоих наблюдениях, а не вывод о том, что помогает.", "Shows an association, not a cause: average mood in your observations, not a conclusion about what helps."))
                     .font(.lora(12))
                     .foregroundStyle(AppTheme.inkSoft)
                     .padding(.horizontal, 4)
@@ -48,7 +48,7 @@ struct FactorDetailView: View {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 6) {
                     Text(category.icon)
-                    Text(category.name).font(.lora(17, weight: .semibold)).foregroundStyle(AppTheme.ink)
+                    Text(Ldata(category.name)).font(.lora(17, weight: .semibold)).foregroundStyle(AppTheme.ink)
                 }
             }
         }
@@ -57,9 +57,9 @@ struct FactorDetailView: View {
     private var activityFilterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterChip(title: "Все", isSelected: activityFilter == nil) { activityFilter = nil }
+                filterChip(title: L("Все", "All"), isSelected: activityFilter == nil) { activityFilter = nil }
                 ForEach(activityNames, id: \.self) { name in
-                    filterChip(title: name, isSelected: activityFilter == name) { activityFilter = name }
+                    filterChip(title: Ldata(name), isSelected: activityFilter == name) { activityFilter = name }
                 }
             }
         }
@@ -82,7 +82,7 @@ struct FactorDetailView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 FactorIconView(icon: option.optionIcon, iconImageName: option.optionIconImageName, size: 22)
-                Text(option.optionName)
+                Text(Ldata(option.optionName))
                     .font(.lora(15, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
                 Spacer()
@@ -93,11 +93,11 @@ struct FactorDetailView: View {
                 }
             }
             if option.hasEnoughData {
-                Text("\(option.checkInCount) check-ins" + (option.goodMoodShare.map { " · \(Int(($0 * 100).rounded()))% хороших" } ?? ""))
+                Text("\(option.checkInCount) check-ins" + (option.goodMoodShare.map { L(" · \(Int(($0 * 100).rounded()))% хороших", " · \(Int(($0 * 100).rounded()))% good") } ?? ""))
                     .font(.lora(12))
                     .foregroundStyle(AppTheme.inkSoft)
             } else {
-                Text("\(option.checkInCount) check-ins — недостаточно данных")
+                Text(L("\(option.checkInCount) check-ins — недостаточно данных", "\(option.checkInCount) check-ins — not enough data"))
                     .font(.lora(12))
                     .foregroundStyle(AppTheme.inkSoft)
             }

@@ -42,17 +42,17 @@ struct CycleLogSheet: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        DiaryFormSection("День") {
-                            DatePicker("День", selection: $day, in: ...Date.now, displayedComponents: .date)
+                        DiaryFormSection(L("День", "Day")) {
+                            DatePicker(L("День", "Day"), selection: $day, in: ...Date.now, displayedComponents: .date)
                                 .diaryPicker()
                             if let cycleDay = cycleStore.cycleDay(for: day) {
-                                Text("День цикла: \(cycleDay)")
+                                Text(L("День цикла: \(cycleDay)", "Cycle day: \(cycleDay)"))
                                     .font(.lora(15, weight: .medium))
                                     .foregroundStyle(AppTheme.ink)
                             }
                         }
 
-                        DiaryFormSection("Отметить этот день") {
+                        DiaryFormSection(L("Отметить этот день", "Mark this day")) {
                             VStack(spacing: 10) {
                                 ForEach(CycleEventKind.allCases, id: \.self) { kind in
                                     Button {
@@ -76,24 +76,24 @@ struct CycleLogSheet: View {
                             }
                         }
 
-                        DiaryFormSection("Несколько дней") {
-                            Toggle("Отметить сразу несколько дней", isOn: $marksRange)
+                        DiaryFormSection(L("Несколько дней", "Several days")) {
+                            Toggle(L("Отметить сразу несколько дней", "Mark several days at once"), isOn: $marksRange)
                                 .font(.lora(15))
                                 .foregroundStyle(AppTheme.ink)
                                 .tint(AppTheme.forest)
                             if marksRange {
                                 HStack(spacing: 12) {
-                                    Text("по")
+                                    Text(L("по", "until"))
                                         .font(.lora(15))
                                         .foregroundStyle(AppTheme.inkSoft)
-                                    DatePicker("по", selection: $rangeEnd, in: day...Date.now, displayedComponents: .date)
+                                    DatePicker(L("по", "until"), selection: $rangeEnd, in: day...Date.now, displayedComponents: .date)
                                         .diaryPicker()
                                 }
-                                Toggle("Первый день — начало", isOn: $firstDayIsStart)
+                                Toggle(L("Первый день — начало", "First day is the start"), isOn: $firstDayIsStart)
                                     .font(.lora(15))
                                     .foregroundStyle(AppTheme.ink)
                                     .tint(AppTheme.forest)
-                                Button("Отметить \(rangeDayCount) дн.") {
+                                Button(L("Отметить \(rangeDayCount) дн.", "Mark \(rangeDayCount) days")) {
                                     cycleStore.logPeriod(from: day, through: rangeEnd, firstDayIsStart: firstDayIsStart)
                                     dismiss()
                                 }
@@ -102,7 +102,7 @@ struct CycleLogSheet: View {
                         }
 
                         if !existing.isEmpty {
-                            Button("Убрать отметку за этот день") {
+                            Button(L("Убрать отметку за этот день", "Remove this day's mark")) {
                                 cycleStore.clear(on: day)
                                 dismiss()
                             }
@@ -110,7 +110,7 @@ struct CycleLogSheet: View {
                             .foregroundStyle(AppTheme.rustDeep)
                         }
 
-                        DiaryNote(text: "Это личный контекст для наблюдений. Приложение ничего не предсказывает и не ставит диагнозов.")
+                        DiaryNote(text: L("Это личный контекст для наблюдений. Приложение ничего не предсказывает и не ставит диагнозов.", "This is personal context for your observations. The app doesn't predict anything or make diagnoses."))
                     }
                     .padding(20)
                 }
@@ -120,12 +120,12 @@ struct CycleLogSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("🌸 Цикл")
+                    Text(L("🌸 Цикл", "🌸 Cycle"))
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть") { dismiss() }
+                    Button(L("Закрыть", "Close")) { dismiss() }
                         .font(.lora(15))
                         .foregroundStyle(AppTheme.forest)
                 }

@@ -52,9 +52,10 @@ enum LiveActivityController {
         }
         let attributes = SessionActivityAttributes(
             sessionID: session.id,
-            activityName: session.activity,
+            activityName: Ldata(session.activity),
             startDate: session.startDate,
-            checkInIntervalMinutes: session.checkInIntervalMinutes
+            checkInIntervalMinutes: session.checkInIntervalMinutes,
+            languageCode: AppLanguage.current.rawValue
         )
         let content = ActivityContent(state: contentState(for: session), staleDate: nil)
         do {

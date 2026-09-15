@@ -95,9 +95,11 @@ extension AnalyticsService {
 
     // MARK: - Shared mood aggregation
 
+    /// `checkIns` must be a continuous stretch of time (a day, a month) —
+    /// the average is weighted by how long each mood lasted.
     static func moodStatistics(of checkIns: [CheckIn]) -> MoodStatistics {
         MoodStatistics(
-            average: averageMood(of: checkIns),
+            average: timeWeightedAverageMood(of: checkIns),
             distribution: moodDistribution(of: checkIns),
             checkInCount: checkIns.count,
             firstDifficultMoodAt: checkIns.filter { $0.mood.isDifficult }.map(\.timestamp).min()
@@ -225,7 +227,7 @@ extension AnalyticsService {
             let entries = byDay[dayStart] ?? []
             return DayMoodSummary(
                 date: dayStart,
-                averageMood: averageMood(of: entries),
+                averageMood: timeWeightedAverageMood(of: entries),
                 checkInCount: entries.count
             )
         }

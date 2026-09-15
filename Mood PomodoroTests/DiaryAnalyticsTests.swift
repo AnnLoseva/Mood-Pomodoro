@@ -228,6 +228,63 @@ struct DiaryAnalyticsTests {
         #expect(summary.moodStats.average == 2)
     }
 
+    // MARK: - Time-weighted mood
+
+    private func approximately(_ value: Double?, _ expected: Double) -> Bool {
+        value.map { abs($0 - expected) < 0.001 } ?? false
+    }
+
+    /// 8:00 😄 → 11:00 😄 is three hours at 5; seven check-ins ten minutes
+    /// apart are one hour. Time decides the weight, not the number of entries.
+    @Test func dayAverageWeighsMoodByHowLongItLasted() {
+        let steady = [checkIn(.veryGood, at: date(8, 8)), checkIn(.veryGood, at: date(8, 11))]
+        let jittery = zip([Mood.good, .tired, .veryBad, .veryBad, .veryBad, .veryBad, .tired], 0...)
+            .map { mood, step in checkIn(mood, at: date(9, 8).addingTimeInterval(TimeInterval(step * 10 * 60))) }
+
+        let steadyDay = AnalyticsService.dailySummary(date: date(8), sessions: [], checkIns: steady, calendar: calendar)
+        let jitteryDay = AnalyticsService.dailySummary(date: date(9), sessions: [], checkIns: jittery, calendar: calendar)
+
+        #expect(steadyDay.moodStats.average == 5)
+        // Weights 5,10,10,10,10,10,5 min: (20+20+10+10+10+10+10) / 60.
+        #expect(approximately(jitteryDay.moodStats.average, 1.5))
+    }
+
+    @Test func longStableMoodOutweighsManyQuickCheckIns() {
+        let checkIns = [
+            checkIn(.veryGood, at: date(8, 8)),
+            checkIn(.veryGood, at: date(8, 11)),
+            checkIn(.veryBad, at: date(8, 11, 10)),
+            checkIn(.veryBad, at: date(8, 11, 20)),
+            checkIn(.veryBad, at: date(8, 11, 30))
+        ]
+
+        let summary = AnalyticsService.dailySummary(date: date(8), sessions: [], checkIns: checkIns, calendar: calendar)
+
+        // By count it would be 13/5 = 2.6. By time: 5 × (90+95) + 1 × (10+10+5) over 210 min.
+        #expect(approximately(summary.moodStats.average, 950.0 / 210.0))
+        #expect(summary.moodStats.checkInCount == 5)
+    }
+
+    @Test func longGapsAreCappedSoALonelyCheckInCannotDominate() {
+        let checkIns = [
+            checkIn(.veryGood, at: date(1, 12)),
+            checkIn(.veryBad, at: date(20, 12)),
+            checkIn(.veryBad, at: date(20, 12, 10))
+        ]
+
+        let summary = AnalyticsService.monthlySummary(month: date(10), sessions: [], checkIns: checkIns, calendar: calendar)
+
+        // The 19-day gap counts as 6 h: 5 × 180 + 1 × 185 + 1 × 5 over 370 min.
+        #expect(approximately(summary.moodStats.average, 1090.0 / 370.0))
+    }
+
+    @Test func checkInsSpanningNoTimeFallBackToAPlainAverage() {
+        #expect(AnalyticsService.timeWeightedAverageMood(of: []) == nil)
+        #expect(AnalyticsService.timeWeightedAverageMood(of: [checkIn(.tired, at: date(8))]) == 2)
+        let sameInstant = [checkIn(.veryGood, at: date(8)), checkIn(.veryBad, at: date(8))]
+        #expect(AnalyticsService.timeWeightedAverageMood(of: sameInstant) == 3)
+    }
+
     @Test func cycleBucketsWithholdAnAverageBelowTheSampleFloor() {
         let entries = [CycleEntry(date: date(1), kind: .periodStart, calendar: calendar)]
         // Three check-ins in days 1–5, six in days 6–13.

@@ -31,7 +31,7 @@ enum AnalyticsService {
         let checkIns = sessions.flatMap { $0.checkIns ?? [] } + standaloneCheckIns
         let finished = sessions.filter { $0.state == .completed }
         return OverviewStatistics(
-            averageMood: averageMood(of: checkIns),
+            averageMood: timeWeightedAverageMood(of: checkIns),
             checkInCount: checkIns.count,
             sessionCount: finished.count,
             averageSessionDuration: averageDuration(of: finished),
@@ -43,6 +43,41 @@ enum AnalyticsService {
     static func averageMood(of checkIns: [CheckIn]) -> Double? {
         guard !checkIns.isEmpty else { return nil }
         return checkIns.reduce(0.0) { $0 + $1.mood.scale } / Double(checkIns.count)
+    }
+
+    /// A gap between two check-ins counts as at most this long. A night's
+    /// sleep or a week with no entries isn't mood the user actually felt,
+    /// so it must not let one lonely check-in outweigh everything else.
+    static let maximumMoodGap: TimeInterval = 6 * 60 * 60
+
+    /// Overall mood weighted by *how long* each mood lasted, not by how many
+    /// times it was recorded: 3 hours at 5 outweighs an hour of ten quick
+    /// low check-ins. Each check-in covers half the gap back to the previous
+    /// one and half the gap forward to the next (gaps capped at
+    /// `maximumMoodGap`) — the same as linearly interpolating mood between
+    /// check-ins, so neither the first nor the last entry is ignored.
+    ///
+    /// Only meant for a continuous timeline (a day, a month, everything).
+    /// A filtered subset — "check-ins with coffee" — has gaps that don't
+    /// correspond to real time, so those groups keep `averageMood(of:)`.
+    static func timeWeightedAverageMood(of checkIns: [CheckIn]) -> Double? {
+        guard !checkIns.isEmpty else { return nil }
+        let sorted = checkIns.sorted { $0.timestamp < $1.timestamp }
+        let gaps = zip(sorted, sorted.dropFirst()).map { previous, next in
+            min(next.timestamp.timeIntervalSince(previous.timestamp), maximumMoodGap)
+        }
+        var weightedSum = 0.0
+        var totalWeight = 0.0
+        for (index, checkIn) in sorted.enumerated() {
+            let before = index > 0 ? gaps[index - 1] : 0
+            let after = index < gaps.count ? gaps[index] : 0
+            let weight = (before + after) / 2
+            weightedSum += checkIn.mood.scale * weight
+            totalWeight += weight
+        }
+        // A single check-in, or several at the same instant, span no time.
+        guard totalWeight > 0 else { return averageMood(of: checkIns) }
+        return weightedSum / totalWeight
     }
 
     static func moodDistribution(of checkIns: [CheckIn]) -> MoodDistribution {

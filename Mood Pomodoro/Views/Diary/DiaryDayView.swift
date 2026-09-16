@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 import Charts
 
 /// One day, assembled from what the app recorded plus anything the user
@@ -105,20 +106,66 @@ struct DiaryDayView: View {
     }
 
     private var dayChart: some View {
-        Chart(summary.moodPoints) { point in
-            LineMark(
-                x: .value("Время", point.timestamp),
-                y: .value("Состояние", point.mood.scale)
-            )
-            .foregroundStyle(AppTheme.forest)
-            .interpolationMethod(.catmullRom)
-            PointMark(
-                x: .value("Время", point.timestamp),
-                y: .value("Состояние", point.mood.scale)
-            )
-            .foregroundStyle(point.origin == .manual ? AppTheme.rust : AppTheme.forestDeep)
+        let hasActivities = !summary.activitySpans.isEmpty
+        return Chart {
+            // Activities first, so the mood line is drawn over them.
+            ForEach(summary.activitySpans) { span in
+                ForEach(span.workIntervals, id: \.self) { interval in
+                    RectangleMark(
+                        xStart: .value("Начало", interval.start),
+                        xEnd: .value("Конец", interval.end),
+                        yStart: .value("Состояние", 1.0),
+                        yEnd: .value("Состояние", 5.0)
+                    )
+                    .foregroundStyle(activityColor(for: span).opacity(0.22))
+                }
+                // Marks where it began — and keeps a few-minute session,
+                // too narrow for its band to show, visible at all.
+                RuleMark(
+                    x: .value("Начало", span.start),
+                    yStart: .value("Состояние", 1.0),
+                    yEnd: .value("Состояние", 5.0)
+                )
+                .foregroundStyle(activityColor(for: span).opacity(0.7))
+                .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+            ForEach(summary.moodPoints) { point in
+                LineMark(
+                    x: .value("Время", point.timestamp),
+                    y: .value("Состояние", point.mood.scale)
+                )
+                .foregroundStyle(AppTheme.forest)
+                .interpolationMethod(.catmullRom)
+                PointMark(
+                    x: .value("Время", point.timestamp),
+                    y: .value("Состояние", point.mood.scale)
+                )
+                .foregroundStyle(point.origin == .manual ? AppTheme.rust : AppTheme.forestDeep)
+            }
         }
-        .chartYScale(domain: 1...5)
+        // The space above 5 holds the activity labels.
+        .chartYScale(domain: 1...(hasActivities ? 6 : 5))
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                if hasActivities, let plotFrame = proxy.plotFrame {
+                    let plot = geometry[plotFrame]
+                    ForEach(placedActivityLabels(proxy: proxy, plot: plot)) { label in
+                        HStack(spacing: Self.labelDotSpacing) {
+                            Circle()
+                                .fill(label.color)
+                                .frame(width: Self.labelDotSize, height: Self.labelDotSize)
+                            Text(label.name)
+                                .font(.custom(Self.labelFontName, fixedSize: Self.labelFontSize))
+                                .foregroundStyle(AppTheme.ink)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .frame(width: label.width, height: Self.labelLaneHeight, alignment: .leading)
+                        .offset(x: label.x, y: plot.minY + CGFloat(label.lane) * Self.labelLaneHeight)
+                    }
+                }
+            }
+        }
         .chartYAxis {
             AxisMarks(values: [1, 2, 3, 4, 5]) { value in
                 AxisGridLine().foregroundStyle(AppTheme.border)
@@ -140,7 +187,83 @@ struct DiaryDayView: View {
                 }
             }
         }
-        .frame(height: 160)
+        .frame(height: hasActivities ? 190 : 160)
+    }
+
+    // MARK: - Activity labels on the day chart
+
+    private struct PlacedActivityLabel: Identifiable {
+        let id: UUID
+        let name: String
+        let color: Color
+        let x: CGFloat
+        let lane: Int
+        let width: CGFloat
+    }
+
+    /// Muted woodland tones that stay distinct from the forest-green mood line.
+    private static let activityPalette: [Color] = [
+        AppTheme.moss,
+        Color(red: 0.769, green: 0.584, blue: 0.259),
+        Color(red: 0.357, green: 0.463, blue: 0.541),
+        Color(red: 0.522, green: 0.365, blue: 0.447),
+        AppTheme.rust
+    ]
+
+    private static let labelFontName = "Lora-Medium"
+    private static let labelFontSize: CGFloat = 10
+    private static let labelDotSize: CGFloat = 6
+    private static let labelDotSpacing: CGFloat = 3
+    private static let labelLaneHeight: CGFloat = 14
+    private static let labelLaneCount = 2
+    private static let labelGap: CGFloat = 6
+    private static let labelFont = UIFont(name: labelFontName, size: labelFontSize)
+        ?? .systemFont(ofSize: labelFontSize, weight: .medium)
+
+    /// The same activity keeps one color through the day.
+    private func activityColor(for span: ActivitySpan) -> Color {
+        var names: [String] = []
+        for other in summary.activitySpans where !names.contains(other.activityName) {
+            names.append(other.activityName)
+        }
+        let index = names.firstIndex(of: span.activityName) ?? 0
+        return Self.activityPalette[index % Self.activityPalette.count]
+    }
+
+    /// Each label starts where its activity starts and sits in the first of
+    /// two lanes above the chart with room for it. A short session is often
+    /// narrower than its name, so labels may run past their band — but never
+    /// over another label; one that can't fit anywhere is shifted right and
+    /// truncated, or left out if there is no room at all.
+    private func placedActivityLabels(proxy: ChartProxy, plot: CGRect) -> [PlacedActivityLabel] {
+        var laneEnds = Array(repeating: -CGFloat.infinity, count: Self.labelLaneCount)
+        return summary.activitySpans.compactMap { span in
+            guard let startX = proxy.position(forX: span.start) else { return nil }
+            let name = span.activityName.isEmpty ? L("Сессия", "Session") : Ldata(span.activityName)
+            let textWidth = (name as NSString).size(withAttributes: [.font: Self.labelFont]).width
+            let naturalWidth = ceil(textWidth) + Self.labelDotSize + Self.labelDotSpacing + 2
+            let preferredX = max(plot.minX, min(plot.minX + startX, plot.maxX - naturalWidth))
+
+            let lane: Int
+            var x = preferredX
+            if let free = laneEnds.firstIndex(where: { $0 + Self.labelGap <= preferredX }) {
+                lane = free
+            } else {
+                lane = laneEnds.indices.min { laneEnds[$0] < laneEnds[$1] } ?? 0
+                x = laneEnds[lane] + Self.labelGap
+            }
+            let width = min(naturalWidth, plot.maxX - x)
+            guard width >= Self.labelDotSize + Self.labelDotSpacing + 16 else { return nil }
+            laneEnds[lane] = x + width
+            return PlacedActivityLabel(
+                id: span.id,
+                name: name,
+                color: activityColor(for: span),
+                x: x,
+                lane: lane,
+                width: width
+            )
+        }
     }
 
     private var timelineCard: some View {

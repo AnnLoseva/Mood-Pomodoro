@@ -158,6 +158,35 @@ struct DiaryAnalyticsTests {
         #expect(summary.activities[0].hasEnoughData == false)
     }
 
+    @Test func activitySpansFollowWorkSegmentsAndStayInsideTheDay() {
+        let math = FocusSession(activity: "Математика", startDate: date(10, 9), checkInIntervalMinutes: 10)
+        let segments = [
+            SessionSegment(type: .work, startDate: date(10, 9), endDate: date(10, 9, 30)),
+            SessionSegment(type: .pause, startDate: date(10, 9, 30), endDate: date(10, 9, 40)),
+            SessionSegment(type: .work, startDate: date(10, 9, 40), endDate: date(10, 10))
+        ]
+        segments.forEach { $0.session = math }
+        math.segments = segments
+        math.endDate = date(10, 10)
+        math.state = .completed
+        let late = session(activity: "Код", start: date(10, 23, 30), workMinutes: 60)
+
+        let tenth = AnalyticsService.dailySummary(date: date(10), sessions: [late, math], checkIns: [], calendar: calendar)
+        let eleventh = AnalyticsService.dailySummary(date: date(11), sessions: [late, math], checkIns: [], calendar: calendar)
+
+        #expect(tenth.activitySpans.map(\.activityName) == ["Математика", "Код"])
+        // The break is a gap between two work intervals.
+        #expect(tenth.activitySpans[0].workIntervals == [
+            DateInterval(start: date(10, 9), end: date(10, 9, 30)),
+            DateInterval(start: date(10, 9, 40), end: date(10, 10))
+        ])
+        // A session past midnight is drawn on both days, each clipped to its part.
+        #expect(tenth.activitySpans[1].end == date(11, 0, 0))
+        #expect(eleventh.activitySpans.map(\.activityName) == ["Код"])
+        #expect(eleventh.activitySpans[0].start == date(11, 0, 0))
+        #expect(eleventh.activitySpans[0].end == date(11, 0, 30))
+    }
+
     @Test func dailySummaryRecordsTheFirstDifficultMoment() {
         let work = session(activity: "Чтение", start: date(10, 9), workMinutes: 120)
         let checkIns = [

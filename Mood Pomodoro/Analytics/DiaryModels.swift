@@ -37,6 +37,16 @@ struct TimeOfDayMoodPoint: Identifiable {
     let origin: CheckInOrigin
 }
 
+/// One session drawn behind the day's mood chart: when it ran and what it
+/// was. Clipped to the day; breaks are the gaps between `workIntervals`.
+struct ActivitySpan: Identifiable {
+    let id: UUID
+    let activityName: String
+    let start: Date
+    let end: Date
+    let workIntervals: [DateInterval]
+}
+
 /// Time spent on one activity plus how it felt, for a day or a month.
 struct ActivityDurationStatistics: Identifiable {
     var id: String { activityName }
@@ -117,6 +127,8 @@ struct DailySummary {
     let date: Date
     let moodStats: MoodStatistics
     let moodPoints: [TimeOfDayMoodPoint]
+    /// Every session that overlapped the day, oldest first.
+    let activitySpans: [ActivitySpan]
     let timelineEvents: [TimelineEvent]
     let activities: [ActivityDurationStatistics]
     /// Distinct conditions recorded that day — during sessions or added to

@@ -178,6 +178,7 @@ extension AnalyticsService {
             moodPoints: dayCheckIns.map {
                 TimeOfDayMoodPoint(id: $0.id, timestamp: $0.timestamp, mood: $0.mood, origin: $0.origin)
             },
+            activitySpans: activitySpans(of: overlapping, on: date, calendar: calendar),
             timelineEvents: events,
             activities: activityDurationStatistics(sessions: startedToday, checkIns: dayCheckIns),
             conditions: conditions,
@@ -308,6 +309,44 @@ extension AnalyticsService {
             )
         }
         .sorted { $0.activeDuration > $1.activeDuration }
+    }
+
+    // MARK: - Activity spans
+
+    /// When each session actually ran on `date`, for the day chart. Unlike
+    /// study *time* (attributed to the start day), this is placed on the
+    /// clock: a session running past midnight shows up on both days, each
+    /// clipped to its own part. Only work segments count — a break is a gap.
+    static func activitySpans(
+        of sessions: [FocusSession],
+        on date: Date,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> [ActivitySpan] {
+        let dayStart = calendar.startOfDay(for: date)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? endOfDay(date, calendar: calendar)
+        return sessions.compactMap { session in
+            let work = session.sortedSegments.filter { $0.type == .work }
+            // Sessions from before segments existed only have start/end.
+            let ranges = work.isEmpty
+                ? [(session.startDate, session.endDate ?? now)]
+                : work.map { ($0.startDate, $0.endDate ?? now) }
+            let intervals = ranges.compactMap { start, end -> DateInterval? in
+                let clippedStart = max(start, dayStart)
+                let clippedEnd = min(end, dayEnd)
+                guard clippedEnd > clippedStart else { return nil }
+                return DateInterval(start: clippedStart, end: clippedEnd)
+            }
+            guard let first = intervals.first, let last = intervals.last else { return nil }
+            return ActivitySpan(
+                id: session.id,
+                activityName: session.activity,
+                start: first.start,
+                end: last.end,
+                workIntervals: intervals
+            )
+        }
+        .sorted { $0.start < $1.start }
     }
 
     // MARK: - Helpers

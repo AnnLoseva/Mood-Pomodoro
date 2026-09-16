@@ -36,6 +36,8 @@ struct ExportSheet: View {
     @Query private var supportEntries: [SupportEntry]
     @Query private var notes: [JournalNote]
     @Query private var conditionEvents: [ConditionEvent]
+    @Query private var foodEntries: [FoodEntry]
+    @Query private var hungerEntries: [HungerEntry]
 
     @State private var period: Period = .days30
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -13, to: .now) ?? .now
@@ -46,6 +48,7 @@ struct ExportSheet: View {
     @State private var includeNotes = true
     @State private var includeCycle = true
     @State private var includeSupport = true
+    @State private var includeFood = true
     @State private var copied = false
 
     private let calendar = Calendar.current
@@ -57,7 +60,9 @@ struct ExportSheet: View {
             cycleEntries: cycleEntries,
             supportEntries: supportEntries,
             notes: notes,
-            conditionEvents: conditionEvents
+            conditionEvents: conditionEvents,
+            foodEntries: foodEntries,
+            hungerEntries: hungerEntries
         )
     }
 
@@ -90,7 +95,8 @@ struct ExportSheet: View {
             includeAIPrompt: includeAIPrompt,
             includeNotes: includeNotes,
             includeCycle: includeCycle,
-            includeSupport: includeSupport
+            includeSupport: includeSupport,
+            includeFood: includeFood
         )
     }
 
@@ -143,6 +149,7 @@ struct ExportSheet: View {
                                 toggle(L("Заметки", "Notes"), isOn: $includeNotes)
                                 toggle(L("Цикл", "Cycle"), isOn: $includeCycle)
                                 toggle(L("Ежедневную поддержку", "Daily support"), isOn: $includeSupport)
+                                toggle(L("Еду, голод и аппетит", "Food, hunger and appetite"), isOn: $includeFood)
                             }
                         }
 

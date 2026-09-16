@@ -30,6 +30,7 @@ struct ExportOptions: Equatable {
     var includeNotes = true
     var includeCycle = true
     var includeSupport = true
+    var includeFood = true
 }
 
 struct ExportInput {
@@ -39,11 +40,14 @@ struct ExportInput {
     var supportEntries: [SupportEntry] = []
     var notes: [JournalNote] = []
     var conditionEvents: [ConditionEvent] = []
+    var foodEntries: [FoodEntry] = []
+    var hungerEntries: [HungerEntry] = []
 
     /// When anything was first recorded — where "all time" starts.
     var earliestDate: Date? {
         let dates = sessions.map(\.startDate) + checkIns.map(\.timestamp) + cycleEntries.map(\.date)
             + supportEntries.map(\.day) + notes.map(\.timestamp) + conditionEvents.map(\.timestamp)
+            + foodEntries.map(\.eventDate) + hungerEntries.map(\.eventDate)
         return dates.min()
     }
 }
@@ -114,6 +118,8 @@ private struct ExportBuilder {
             supportEntries: options.includeSupport ? input.supportEntries : [],
             notes: options.includeNotes ? input.notes : [],
             diaryFactors: input.conditionEvents,
+            foodEntries: options.includeFood ? input.foodEntries : [],
+            hungerEntries: options.includeFood ? input.hungerEntries : [],
             calendar: calendar
         )
     }
@@ -122,6 +128,8 @@ private struct ExportBuilder {
 
     func markdown() -> String {
         let checkInsByID = Dictionary(input.checkIns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let foodByID = Dictionary(input.foodEntries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let hungerByID = Dictionary(input.hungerEntries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let range = "\(DateFormatting.fullDate(interval.start)) – \(DateFormatting.fullDate(lastDay))"
         var lines: [String] = []
 
@@ -146,6 +154,9 @@ private struct ExportBuilder {
         if options.includeSupport {
             lines.append("- " + L("Ежедневная поддержка — моя отметка: принято / не принято / не помню. День без отметки значит «не записано», а не «не принято».", "Daily support is my own mark: taken / not taken / don't remember. A day with no mark means it wasn't recorded — not that it wasn't taken."))
         }
+        if options.includeFood {
+            lines.append("- " + L("Еда — мои собственные пометки для наблюдений: «полезная / обычная / вредная» — это ярлыки на записях, а не оценка меня и не медицинская классификация. Калории и вес еды не считаются. Голод (насколько телу нужна еда) и аппетит (насколько хочется есть) — две разные шкалы 1–5, они не выводятся одна из другой.", "Food entries are my own labels for observation: “wholesome / regular / junk” tag a record, they are not a judgement of me and not a medical classification. Nothing counts calories or portions. Hunger (how much my body needs food) and appetite (how much I feel like eating) are two separate 1–5 scales and neither is derived from the other."))
+        }
         lines.append("- " + L("Цифры по нескольким записям ненадёжны, и то, что два события совпали, не значит, что одно вызвало другое.", "Figures based on a handful of entries aren't reliable, and two things happening together doesn't mean one caused the other."))
         lines.append("")
 
@@ -156,7 +167,7 @@ private struct ExportBuilder {
         lines.append("## " + L("По дням", "Day by day"))
         var anyDay = false
         for day in days {
-            let block = dayBlock(day, checkInsByID: checkInsByID)
+            let block = dayBlock(day, checkInsByID: checkInsByID, foodByID: foodByID, hungerByID: hungerByID)
             guard !block.isEmpty else { continue }
             anyDay = true
             lines.append("")
@@ -216,6 +227,43 @@ private struct ExportBuilder {
             lines.append("- " + L("Ежедневная поддержка, дней", "Daily support, days") + ": " + parts.joined(separator: " · "))
         }
 
+        if options.includeFood {
+            let meals = input.foodEntries.filter { inRange($0.eventDate) }
+            let hunger = input.hungerEntries.filter { !$0.isEmpty && inRange($0.eventDate) }
+            if !meals.isEmpty {
+                let parts = AnalyticsService.categoryCounts(of: meals)
+                    .map { "\($0.category.label.lowercased()) \($0.count)" }
+                lines.append("- " + L("Записей о еде", "Food entries") + ": \(meals.count) (" + parts.joined(separator: " · ") + ")")
+                let treats = AnalyticsService.treatBreakdown(of: meals)
+                if !treats.isEmpty {
+                    let byType = treats.byType.map { "\($0.type.label.lowercased()) \($0.count)" }
+                    let byAmount = treats.byAmount.map { "\($0.amount.label.lowercased()) \($0.count)" }
+                    lines.append("  - " + L("Вредная еда", "Junk / treat") + ": " + (byType + byAmount).joined(separator: " · "))
+                }
+            }
+            if !hunger.isEmpty {
+                var parts: [String] = []
+                if let average = AnalyticsService.averageScale(hunger.compactMap(\.hunger)) {
+                    parts.append(L("средний голод", "average hunger") + " " + String(format: "%.1f / 5", average)
+                                 + " (\(hunger.compactMap(\.hunger).count))")
+                }
+                if let average = AnalyticsService.averageScale(hunger.compactMap(\.appetite)) {
+                    parts.append(L("средний аппетит", "average appetite") + " " + String(format: "%.1f / 5", average)
+                                 + " (\(hunger.compactMap(\.appetite).count))")
+                }
+                if !parts.isEmpty {
+                    lines.append("- " + L("Голод и аппетит", "Hunger and appetite") + ": " + parts.joined(separator: "; "))
+                }
+                let before = meals.compactMap {
+                    AnalyticsService.hungerEntry(before: $0.eventDate, in: input.hungerEntries)?.hunger
+                }
+                if let average = AnalyticsService.averageScale(before) {
+                    lines.append("  - " + L("Голод перед едой", "Hunger before meals") + ": "
+                                 + String(format: "%.1f / 5", average) + " (\(before.count))")
+                }
+            }
+        }
+
         if options.includeCycle, !input.cycleEntries.isEmpty {
             let periodDays = days.filter { AnalyticsService.isPeriodDay($0, entries: input.cycleEntries, calendar: calendar) }
             if !periodDays.isEmpty {
@@ -241,7 +289,12 @@ private struct ExportBuilder {
         return lines
     }
 
-    private func dayBlock(_ day: Date, checkInsByID: [UUID: CheckIn]) -> [String] {
+    private func dayBlock(
+        _ day: Date,
+        checkInsByID: [UUID: CheckIn],
+        foodByID: [UUID: FoodEntry],
+        hungerByID: [UUID: HungerEntry]
+    ) -> [String] {
         let summary = summary(for: day)
         let hasCycle = options.includeCycle && (summary.isPeriodDay || !summary.cycleEvents.isEmpty)
         guard !summary.isEmpty || hasCycle else { return [] }
@@ -278,13 +331,31 @@ private struct ExportBuilder {
             lines.append("- ☕ " + L("Условия", "Conditions") + ": " + parts.joined(separator: "; "))
         }
         for event in summary.timelineEvents {
-            guard let text = describe(event, checkInsByID: checkInsByID) else { continue }
+            guard let text = describe(
+                event,
+                checkInsByID: checkInsByID,
+                foodByID: foodByID,
+                hungerByID: hungerByID
+            ) else { continue }
             lines.append("- \(DateFormatting.time(event.timestamp)) · \(text)")
         }
         return lines
     }
 
-    private func describe(_ event: TimelineEvent, checkInsByID: [UUID: CheckIn]) -> String? {
+    /// "(записано позже: …)" — the same note the check-in rows carry, so a
+    /// backdated entry is never read as something logged in the moment.
+    private func recordedLaterSuffix(eventDate: Date, createdAt: Date) -> String {
+        guard createdAt.timeIntervalSince(eventDate) > 30 * 60 else { return "" }
+        let written = "\(DateFormatting.compactDate(createdAt)) \(DateFormatting.time(createdAt))"
+        return " " + L("(записано позже: \(written))", "(recorded later: \(written))")
+    }
+
+    private func describe(
+        _ event: TimelineEvent,
+        checkInsByID: [UUID: CheckIn],
+        foodByID: [UUID: FoodEntry],
+        hungerByID: [UUID: HungerEntry]
+    ) -> String? {
         switch event.kind {
         case .checkIn:
             guard let mood = event.mood else { return nil }
@@ -304,6 +375,22 @@ private struct ExportBuilder {
                     text += " " + L("(записано позже: \(written))", "(recorded later: \(written))")
                 }
             }
+            return text
+        case .food:
+            guard options.includeFood, case .food(let id)? = event.target, let entry = foodByID[id] else { return nil }
+            var text = "\(entry.category.emoji) \(entry.detailLine)"
+            if let desc = entry.desc, !desc.isEmpty { text += " — \(desc)" }
+            if let fullness = entry.fullness {
+                text += " · " + L("после еды", "afterwards") + ": \(fullness.label)"
+            }
+            if options.includeNotes, let note = entry.note, !note.isEmpty { text += " — “\(note)”" }
+            text += recordedLaterSuffix(eventDate: entry.eventDate, createdAt: entry.createdAt)
+            return text
+        case .hunger:
+            guard options.includeFood, case .hunger(let id)? = event.target, let entry = hungerByID[id] else { return nil }
+            var text = "🍎 \(entry.summaryLine)"
+            if options.includeNotes, let note = entry.note, !note.isEmpty { text += " — “\(note)”" }
+            text += recordedLaterSuffix(eventDate: entry.eventDate, createdAt: entry.createdAt)
             return text
         case .note:
             return options.includeNotes ? "📝 “\(event.title)”" : nil
@@ -350,7 +437,7 @@ private struct ExportBuilder {
         let sessions = input.sessions.filter { inRange($0.startDate) }.sorted { $0.startDate < $1.startDate }
 
         let export = JSONExport(
-            readme: L("Дневник настроения из приложения Mood Pomodoro. Настроение по шкале 1–5 (5 — очень хорошо). Это самонаблюдения, а не медицинские данные; совпадение не означает причину. У отсутствующей отметки поддержки значение «не записано», а не «не принято». time — когда событие произошло, recordedAt — когда его записали.", "Mood diary from the Mood Pomodoro app. Mood is on a 1–5 scale (5 = very good). Self-observations, not medical records; co-occurrence is not causation. A missing daily-support mark means “not recorded”, not “not taken”. `time` is when something happened; `recordedAt` is when it was written down."),
+            readme: L("Дневник настроения из приложения Mood Pomodoro. Настроение по шкале 1–5 (5 — очень хорошо). Это самонаблюдения, а не медицинские данные; совпадение не означает причину. У отсутствующей отметки поддержки значение «не записано», а не «не принято». time — когда событие произошло, recordedAt — когда его записали. Категории еды (полезная / обычная / вредная) — мои личные ярлыки для наблюдений, не оценка и не медицинская классификация; калории не считаются. Голод и аппетит — две независимые шкалы 1–5.", "Mood diary from the Mood Pomodoro app. Mood is on a 1–5 scale (5 = very good). Self-observations, not medical records; co-occurrence is not causation. A missing daily-support mark means “not recorded”, not “not taken”. `time` is when something happened; `recordedAt` is when it was written down. The food categories (wholesome / regular / junk) are my own labels for observation, not a judgement and not a medical classification; nothing counts calories. Hunger and appetite are two independent 1–5 scales."),
             language: options.language.rawValue,
             exportedAt: iso.string(from: now),
             period: .init(start: dayFormatter.string(from: interval.start), end: dayFormatter.string(from: lastDay)),
@@ -422,6 +509,43 @@ private struct ExportBuilder {
                 ? input.notes.filter { inRange($0.timestamp) }.sorted { $0.timestamp < $1.timestamp }.map {
                     .init(time: iso.string(from: $0.timestamp), text: $0.text)
                 }
+                : nil,
+            food: options.includeFood
+                ? input.foodEntries.filter { inRange($0.eventDate) }.sorted { $0.eventDate < $1.eventDate }.map { entry in
+                    .init(
+                        time: iso.string(from: entry.eventDate),
+                        recordedAt: iso.string(from: entry.createdAt),
+                        category: entry.category.rawValue,
+                        categoryLabel: entry.category.label,
+                        mealDensity: entry.mealDensity?.rawValue,
+                        taste: entry.taste?.rawValue,
+                        treatType: entry.treatType?.rawValue,
+                        treatAmount: entry.treatAmount?.rawValue,
+                        fullness: entry.fullness.map { Int($0.scale) },
+                        fullnessLabel: entry.fullness?.label,
+                        what: entry.desc,
+                        note: options.includeNotes ? entry.note : nil,
+                        hungerBefore: AnalyticsService
+                            .hungerEntry(before: entry.eventDate, in: input.hungerEntries)?
+                            .hunger.map { Int($0.scale) }
+                    )
+                }
+                : nil,
+            hungerAppetite: options.includeFood
+                ? input.hungerEntries
+                    .filter { !$0.isEmpty && inRange($0.eventDate) }
+                    .sorted { $0.eventDate < $1.eventDate }
+                    .map { entry in
+                        .init(
+                            time: iso.string(from: entry.eventDate),
+                            recordedAt: iso.string(from: entry.createdAt),
+                            hunger: entry.hunger.map { Int($0.scale) },
+                            hungerLabel: entry.hunger?.label,
+                            appetite: entry.appetite.map { Int($0.scale) },
+                            appetiteLabel: entry.appetite?.label,
+                            note: options.includeNotes ? entry.note : nil
+                        )
+                    }
                 : nil
         )
 
@@ -483,6 +607,36 @@ private struct JSONExport: Encodable {
     struct CycleRecord: Encodable { let date: String; let mark: String; let label: String }
     struct FactorRecord: Encodable { let time: String; let category: String; let value: String }
     struct NoteRecord: Encodable { let time: String; let text: String }
+    /// A meal as recorded. Only the fields belonging to its category are
+    /// present — a treat has no density or taste, a meal has no amount.
+    struct FoodRecord: Encodable {
+        let time: String
+        let recordedAt: String
+        let category: String
+        let categoryLabel: String
+        let mealDensity: String?
+        let taste: String?
+        let treatType: String?
+        let treatAmount: String?
+        let fullness: Int?
+        let fullnessLabel: String?
+        let what: String?
+        let note: String?
+        /// Hunger recorded shortly *before* this meal, when there was one.
+        /// Proximity in time only — it says nothing about cause.
+        let hungerBefore: Int?
+    }
+    /// Kept apart on purpose: nil means that scale wasn't answered, which
+    /// is not the same as the middle of it.
+    struct HungerRecord: Encodable {
+        let time: String
+        let recordedAt: String
+        let hunger: Int?
+        let hungerLabel: String?
+        let appetite: Int?
+        let appetiteLabel: String?
+        let note: String?
+    }
 
     let readme: String
     var app = "Mood Pomodoro"
@@ -497,6 +651,8 @@ private struct JSONExport: Encodable {
     let cycle: [CycleRecord]?
     let factors: [FactorRecord]
     let notes: [NoteRecord]?
+    let food: [FoodRecord]?
+    let hungerAppetite: [HungerRecord]?
 
     init(
         readme: String,
@@ -510,7 +666,9 @@ private struct JSONExport: Encodable {
         dailySupport: [SupportRecord]?,
         cycle: [CycleRecord]?,
         factors: [FactorRecord],
-        notes: [NoteRecord]?
+        notes: [NoteRecord]?,
+        food: [FoodRecord]?,
+        hungerAppetite: [HungerRecord]?
     ) {
         self.readme = readme
         self.language = language
@@ -524,5 +682,7 @@ private struct JSONExport: Encodable {
         self.cycle = cycle
         self.factors = factors
         self.notes = notes
+        self.food = food
+        self.hungerAppetite = hungerAppetite
     }
 }

@@ -29,10 +29,17 @@ extension AnalyticsService {
     /// recorded start (that day is day 1). Nil when nothing has been recorded
     /// on or before `date` — the app never guesses a start it wasn't told.
     static func cycleDay(for date: Date, entries: [CycleEntry], calendar: Calendar = .current) -> Int? {
+        cycleDay(for: date, marks: entries.map(\.mark), calendar: calendar)
+    }
+
+    /// The same count over marks from *any* source — the user's own entries,
+    /// Apple Health, or both together. Health carries its own cycle-start
+    /// flag, so day 1 still comes from a recorded start and is never guessed.
+    static func cycleDay(for date: Date, marks: [CycleMark], calendar: Calendar = .current) -> Int? {
         let day = calendar.startOfDay(for: date)
-        let starts = entries
+        let starts = marks
             .filter { $0.kind == .periodStart }
-            .map { calendar.startOfDay(for: $0.date) }
+            .map { calendar.startOfDay(for: $0.day) }
             .sorted()
         guard let lastStart = starts.last(where: { $0 <= day }) else { return nil }
         let elapsed = calendar.dateComponents([.day], from: lastStart, to: day).day ?? 0
@@ -44,13 +51,18 @@ extension AnalyticsService {
     /// recorded after it. A start with no end yet covers only the days the
     /// user actually marked — the app doesn't assume how long it lasted.
     static func isPeriodDay(_ date: Date, entries: [CycleEntry], calendar: Calendar = .current) -> Bool {
+        isPeriodDay(date, marks: entries.map(\.mark), calendar: calendar)
+    }
+
+    /// As above, over marks from any source.
+    static func isPeriodDay(_ date: Date, marks: [CycleMark], calendar: Calendar = .current) -> Bool {
         let day = calendar.startOfDay(for: date)
-        if entries.contains(where: { calendar.isDate($0.date, inSameDayAs: day) }) { return true }
-        let sorted = entries.sorted { $0.date < $1.date }
-        guard let lastStart = sorted.last(where: { $0.kind == .periodStart && $0.date <= day }) else { return false }
-        return sorted.contains { entry in
-            entry.kind == .periodEnd && entry.date > day && entry.date > lastStart.date
-                && !sorted.contains { $0.kind == .periodStart && $0.date > lastStart.date && $0.date <= entry.date }
+        if marks.contains(where: { calendar.isDate($0.day, inSameDayAs: day) }) { return true }
+        let sorted = marks.sorted { $0.day < $1.day }
+        guard let lastStart = sorted.last(where: { $0.kind == .periodStart && $0.day <= day }) else { return false }
+        return sorted.contains { mark in
+            mark.kind == .periodEnd && mark.day > day && mark.day > lastStart.day
+                && !sorted.contains { $0.kind == .periodStart && $0.day > lastStart.day && $0.day <= mark.day }
         }
     }
 
@@ -69,10 +81,15 @@ extension AnalyticsService {
     static func supportMoodStatistics(
         checkIns: [CheckIn],
         supportEntries: [SupportEntry],
+        healthMedication: [Date: HealthMedicationDay] = [:],
         in interval: DateInterval,
         calendar: Calendar = .current
     ) -> [SupportMoodStat] {
         var statusByDay: [Date: SupportStatus] = [:]
+        // Health first, so a day the user marked herself overwrites it.
+        for (day, record) in healthMedication where interval.contains(day) {
+            if let status = record.status { statusByDay[calendar.startOfDay(for: day)] = status }
+        }
         for entry in supportEntries where interval.contains(entry.day) {
             let day = calendar.startOfDay(for: entry.day)
             if let winner = supportEntry(on: day, entries: supportEntries, calendar: calendar) {
@@ -120,6 +137,10 @@ extension AnalyticsService {
         supportEntries: [SupportEntry] = [],
         notes: [JournalNote] = [],
         diaryFactors: [ConditionEvent] = [],
+        foodEntries: [FoodEntry] = [],
+        hungerEntries: [HungerEntry] = [],
+        healthCycleMarks: [CycleMark] = [],
+        healthMedication: HealthMedicationDay? = nil,
         calendar: Calendar = .current
     ) -> DailySummary {
         let dayCheckIns = checkIns
@@ -132,6 +153,22 @@ extension AnalyticsService {
             .filter { $0.session == nil && calendar.isDate($0.timestamp, inSameDayAs: date) }
             .sorted { $0.timestamp < $1.timestamp }
         let support = supportEntry(on: date, entries: supportEntries, calendar: calendar)
+        // What the user marked herself always wins; Health only answers for
+        // the days she didn't mark. Two sources, never added together.
+        let supportStatus: SupportDayStatus? = support.map {
+            SupportDayStatus(status: $0.status, time: $0.time, note: $0.note, source: .manual)
+        } ?? healthMedication.flatMap { day in
+            day.status.map {
+                SupportDayStatus(status: $0, time: nil, note: day.detail, source: .healthKit)
+            }
+        }
+        let marks = cycleEntries.map(\.mark) + healthCycleMarks
+        let food = foodDaySummary(
+            date: date,
+            foodEntries: foodEntries,
+            hungerEntries: hungerEntries,
+            calendar: calendar
+        )
 
         // Time is attributed by start day; the timeline additionally shows
         // sessions that merely *overlap* the day, so a session running past
@@ -151,6 +188,12 @@ extension AnalyticsService {
         events.append(contentsOf: dayCheckIns.filter { $0.session == nil }.map(standaloneTimelineEvent))
         events.append(contentsOf: dayFactors.map(factorTimelineEvent))
         events.append(contentsOf: dayNotes.map(noteTimelineEvent))
+        events.append(contentsOf: foodEntries
+            .filter { calendar.isDate($0.eventDate, inSameDayAs: date) }
+            .map(foodTimelineEvent))
+        events.append(contentsOf: hungerEntries
+            .filter { !$0.isEmpty && calendar.isDate($0.eventDate, inSameDayAs: date) }
+            .map(hungerTimelineEvent))
         if let support, let time = support.time {
             events.append(
                 TimelineEvent(
@@ -189,14 +232,15 @@ extension AnalyticsService {
             timelineEvents: events,
             activities: activityDurationStatistics(sessions: startedToday, checkIns: dayCheckIns),
             conditions: conditions,
-            cycleDay: cycleDay(for: date, entries: cycleEntries, calendar: calendar),
-            cycleEvents: cycleEntries
-                .filter { calendar.isDate($0.date, inSameDayAs: date) }
+            cycleDay: cycleDay(for: date, marks: marks, calendar: calendar),
+            cycleEvents: marks
+                .filter { calendar.isDate($0.day, inSameDayAs: date) }
                 .map(\.kind)
                 .sorted { (kindOrder.firstIndex(of: $0) ?? 0) < (kindOrder.firstIndex(of: $1) ?? 0) },
-            isPeriodDay: isPeriodDay(date, entries: cycleEntries, calendar: calendar),
-            support: support.map { SupportDayStatus(status: $0.status, time: $0.time, note: $0.note) },
-            notes: dayNotes.map { DiaryNoteEntry(id: $0.id, timestamp: $0.timestamp, text: $0.text) }
+            isPeriodDay: isPeriodDay(date, marks: marks, calendar: calendar),
+            support: supportStatus,
+            notes: dayNotes.map { DiaryNoteEntry(id: $0.id, timestamp: $0.timestamp, text: $0.text) },
+            food: food
         )
     }
 
@@ -209,6 +253,10 @@ extension AnalyticsService {
         categories: [FactorCategory] = [],
         cycleEntries: [CycleEntry] = [],
         supportEntries: [SupportEntry] = [],
+        foodEntries: [FoodEntry] = [],
+        hungerEntries: [HungerEntry] = [],
+        healthCycleMarks: [CycleMark] = [],
+        healthMedication: [Date: HealthMedicationDay] = [:],
         calendar: Calendar = .current
     ) -> MonthlySummary {
         guard let interval = calendar.dateInterval(of: .month, for: month) else {
@@ -220,7 +268,8 @@ extension AnalyticsService {
                 activities: [],
                 factors: [],
                 cycleBuckets: [],
-                supportStats: []
+                supportStats: [],
+                food: .empty
             )
         }
 
@@ -250,11 +299,25 @@ extension AnalyticsService {
             },
             activities: activityDurationStatistics(sessions: monthSessions, checkIns: monthCheckIns),
             factors: categories.isEmpty ? [] : factorStatistics(categories: categories, sessions: monthSessions),
-            cycleBuckets: cycleMoodBuckets(checkIns: monthCheckIns, entries: cycleEntries, calendar: calendar),
+            cycleBuckets: cycleMoodBuckets(
+                checkIns: monthCheckIns,
+                marks: cycleEntries.map(\.mark) + healthCycleMarks,
+                calendar: calendar
+            ),
             supportStats: supportMoodStatistics(
                 checkIns: monthCheckIns,
                 supportEntries: supportEntries,
+                healthMedication: healthMedication,
                 in: interval,
+                calendar: calendar
+            ),
+            food: foodMonthSummary(
+                in: interval,
+                foodEntries: foodEntries,
+                hungerEntries: hungerEntries,
+                checkIns: checkIns,
+                sessions: monthSessions,
+                cycleEntries: cycleEntries,
                 calendar: calendar
             )
         )
@@ -269,11 +332,20 @@ extension AnalyticsService {
         entries: [CycleEntry],
         calendar: Calendar = .current
     ) -> [CycleMoodBucket] {
+        cycleMoodBuckets(checkIns: checkIns, marks: entries.map(\.mark), calendar: calendar)
+    }
+
+    static func cycleMoodBuckets(
+        checkIns: [CheckIn],
+        marks: [CycleMark],
+        calendar: Calendar = .current
+    ) -> [CycleMoodBucket] {
+        let entries = marks
         guard !entries.isEmpty else { return [] }
         let ranges: [ClosedRange<Int>] = [1...5, 6...13, 14...18, 19...23, 24...45]
         var grouped: [Int: [CheckIn]] = [:]
         for checkIn in checkIns {
-            guard let day = cycleDay(for: checkIn.timestamp, entries: entries, calendar: calendar),
+            guard let day = cycleDay(for: checkIn.timestamp, marks: entries, calendar: calendar),
                   let index = ranges.firstIndex(where: { $0.contains(day) }) else { continue }
             grouped[index, default: []].append(checkIn)
         }

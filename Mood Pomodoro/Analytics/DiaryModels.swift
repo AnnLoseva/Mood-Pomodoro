@@ -114,6 +114,9 @@ struct SupportDayStatus {
     /// Nil = "в течение дня"; the user is never made to pick a time.
     let time: Date?
     let note: String?
+    /// Where the mark came from. A day the user marked herself always wins
+    /// over Apple Health; this is what lets the card say which it is shown.
+    var source: SleepSource = .manual
 }
 
 /// Mood on days carrying one support mark, for the month. Observational
@@ -155,6 +158,9 @@ struct DailySummary {
     let isPeriodDay: Bool
     let support: SupportDayStatus?
     let notes: [DiaryNoteEntry]
+    /// Food, hunger and appetite for the day. Empty when nothing was
+    /// recorded — an untouched food block is absent, never shown as zero.
+    let food: FoodDaySummary
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var totalBreakDuration: TimeInterval { activities.reduce(0) { $0 + $1.breakDuration } }
@@ -180,6 +186,7 @@ struct DailySummary {
     }
     var isEmpty: Bool {
         moodStats.isEmpty && activities.isEmpty && conditions.isEmpty && notes.isEmpty && support == nil
+            && food.isEmpty
     }
 }
 
@@ -195,6 +202,7 @@ struct MonthlySummary {
     let factors: [FactorCategoryStatistics]
     let cycleBuckets: [CycleMoodBucket]
     let supportStats: [SupportMoodStat]
+    let food: FoodMonthSummary
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var sessionCount: Int { activities.reduce(0) { $0 + $1.sessionCount } }
@@ -210,7 +218,7 @@ struct MonthlySummary {
             .sorted { ($0.averageMood ?? 5) < ($1.averageMood ?? 5) }
     }
 
-    var isEmpty: Bool { moodStats.isEmpty && activities.isEmpty }
+    var isEmpty: Bool { moodStats.isEmpty && activities.isEmpty && food.isEmpty }
 }
 
 extension Mood {

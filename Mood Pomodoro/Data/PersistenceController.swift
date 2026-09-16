@@ -23,7 +23,9 @@ enum PersistenceController {
         MoodReason.self,
         CycleEntry.self,
         SupportEntry.self,
-        JournalNote.self
+        JournalNote.self,
+        FoodEntry.self,
+        HungerEntry.self
     ])
 
     /// True when this process actually opened a CloudKit-backed store.

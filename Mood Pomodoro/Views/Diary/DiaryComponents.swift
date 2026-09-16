@@ -154,6 +154,54 @@ struct DiaryNote: View {
     }
 }
 
+/// The small secondary markers for a selected day — food, cycle, support,
+/// study. Deliberately a short strip that only names what the day actually
+/// has: the month calendar keeps mood color as its one indicator, and this
+/// is where the rest of the day announces itself without turning every
+/// calendar cell into a row of icons.
+struct DayMarkersRow: View {
+    let summary: DailySummary
+    var sleep: SleepDaySummary?
+
+    var body: some View {
+        if markers.isEmpty {
+            EmptyView()
+        } else {
+            FlowLayout(spacing: 8) {
+                ForEach(markers, id: \.self) { marker in
+                    Text(marker)
+                        .font(.lora(12))
+                        .foregroundStyle(AppTheme.inkSoft)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule(style: .continuous).fill(AppTheme.parchmentCard.opacity(0.9)))
+                        .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var markers: [String] {
+        var result: [String] = []
+        if let sleep, !sleep.isEmpty {
+            result.append("🌙 \(DurationFormatting.compact(sleep.totalSleep))")
+        }
+        if summary.food.mealCount > 0 { result.append("🍽 \(summary.food.mealCount)") }
+        if !summary.food.hungerEntries.isEmpty { result.append("🍎 \(summary.food.hungerEntries.count)") }
+        if summary.isPeriodDay {
+            result.append("🌸")
+        } else if let day = summary.cycleDay {
+            result.append("🌸 \(day)")
+        }
+        if let support = summary.support { result.append("💊 \(support.status.glyph)") }
+        if summary.totalActiveDuration > 0 {
+            result.append("📚 \(DurationFormatting.compact(summary.totalActiveDuration))")
+        }
+        return result
+    }
+}
+
 /// ‹ title › stepper used for both the day and the month.
 struct DiaryPeriodStepper: View {
     let title: String

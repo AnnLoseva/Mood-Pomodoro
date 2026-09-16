@@ -5,25 +5,35 @@
 
 import Foundation
 
-/// What `Mood`, `EnergyLevel` and `StudyMotivation` have in common: five
-/// steps on the same 1–5 scale, each with a name and an illustration. The
-/// day chart and the check-in pickers are written against this, so all
-/// three are recorded and drawn by one piece of code rather than three.
+/// Five steps on the same 1–5 scale, each with a name and an emoji. Every
+/// scale in the app is one of these, so one piece of code can average a
+/// period, place a point on a chart or draw a picker for all of them.
 ///
 /// As with `Mood.scale`, the number is only ever used to place a point on a
 /// chart or average a period — it is never shown to the user as a score.
 /// Not `Sendable`: `Identifiable` here is main-actor isolated by the
 /// project's default isolation, and these are only ever read from the UI.
-protocol LevelScale: CaseIterable, Identifiable, Codable, Hashable {
+protocol ScaleStep: CaseIterable, Identifiable, Codable, Hashable {
     /// Display order, best first — the order every picker row uses.
     static var orderedCases: [Self] { get }
     var scale: Double { get }
     var label: String { get }
-    var imageName: String { get }
     var emoji: String { get }
 }
 
-extension LevelScale {
+/// A `ScaleStep` that also has an illustration: `Mood`, `EnergyLevel` and
+/// `StudyMotivation`, the three scales a check-in records. The day chart and
+/// the check-in pickers are written against this, so all three are recorded
+/// and drawn by one piece of code rather than three.
+///
+/// The food scales (`HungerLevel`, `AppetiteLevel`, `Fullness`) deliberately
+/// stop at `ScaleStep`: they have no artwork of their own, and a made-up
+/// `imageName` would render as a blank square.
+protocol LevelScale: ScaleStep {
+    var imageName: String { get }
+}
+
+extension ScaleStep {
     /// The step whose position is closest to an averaged value, for picking
     /// one illustration to stand for a period. Named apart from the
     /// concrete `Mood.nearest(to:)`, which predates this protocol and

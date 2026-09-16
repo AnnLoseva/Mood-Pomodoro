@@ -16,6 +16,8 @@ enum TimelineEventKind: String {
     case end
     case support
     case note
+    case food
+    case hunger
 }
 
 /// Which record a diary timeline row opens for editing, if any.
@@ -25,6 +27,10 @@ enum DiaryEditTarget: Hashable {
     case support(Date)
     case factor(UUID)
     case note(UUID)
+    case food(UUID)
+    case hunger(UUID)
+    /// A manually entered night, by its `deterministicKey`.
+    case sleep(String)
 }
 
 struct TimelineEvent: Identifiable {
@@ -36,6 +42,10 @@ struct TimelineEvent: Identifiable {
     let mood: Mood?
     /// Set only by the diary; nil everywhere a row is read-only.
     var target: DiaryEditTarget? = nil
+    /// An illustration to stand in the icon column, for the rows whose own
+    /// scale has artwork (food, hunger/appetite). `mood` wins where both
+    /// are set, since a check-in row is about the mood.
+    var imageName: String? = nil
 }
 
 extension FocusSession {
@@ -170,6 +180,11 @@ struct TimelineRow: View {
     private var icon: some View {
         if let mood = event.mood {
             MoodImage(mood: mood, size: 28)
+        } else if let imageName = event.imageName {
+            Image(imageName)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 28, height: 28)
         } else {
             Text(kindGlyph)
                 .font(.system(size: 16))
@@ -186,6 +201,8 @@ struct TimelineRow: View {
         case .end: return "⏹"
         case .support: return "💊"
         case .note: return "📝"
+        case .food: return "🍽"
+        case .hunger: return "🍎"
         }
     }
 }

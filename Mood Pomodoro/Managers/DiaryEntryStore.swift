@@ -210,6 +210,109 @@ final class DiaryEntryStore {
         save()
     }
 
+    // MARK: - Food
+
+    /// One thing eaten. The branch rule (which optional fields belong to
+    /// which category) lives in `FoodEntry.apply` — the store never writes
+    /// those fields directly, so a contradictory pair can't be saved.
+    @discardableResult
+    func addFood(
+        category: FoodCategory,
+        mealDensity: MealDensity? = nil,
+        taste: TasteRating? = nil,
+        treatType: TreatType? = nil,
+        treatAmount: TreatAmount? = nil,
+        fullness: Fullness? = nil,
+        desc: String? = nil,
+        note: String? = nil,
+        at eventDate: Date
+    ) -> FoodEntry {
+        let entry = FoodEntry(
+            eventDate: eventDate,
+            category: category,
+            mealDensity: mealDensity,
+            taste: taste,
+            treatType: treatType,
+            treatAmount: treatAmount,
+            fullness: fullness,
+            desc: desc,
+            note: note
+        )
+        context.insert(entry)
+        save()
+        return entry
+    }
+
+    func updateFood(
+        _ entry: FoodEntry,
+        category: FoodCategory,
+        mealDensity: MealDensity? = nil,
+        taste: TasteRating? = nil,
+        treatType: TreatType? = nil,
+        treatAmount: TreatAmount? = nil,
+        fullness: Fullness? = nil,
+        desc: String? = nil,
+        note: String? = nil,
+        at eventDate: Date
+    ) {
+        entry.eventDate = eventDate
+        entry.apply(
+            category: category,
+            mealDensity: mealDensity,
+            taste: taste,
+            treatType: treatType,
+            treatAmount: treatAmount
+        )
+        entry.fullness = fullness
+        entry.desc = desc
+        entry.note = note
+        entry.updatedAt = .now
+        save()
+    }
+
+    func deleteFood(_ entry: FoodEntry) {
+        context.delete(entry)
+        save()
+    }
+
+    // MARK: - Hunger / appetite
+
+    /// Both scales are optional and neither is derived from the other; a
+    /// record with neither answered says nothing, so it isn't written.
+    @discardableResult
+    func addHunger(
+        hunger: HungerLevel?,
+        appetite: AppetiteLevel?,
+        note: String? = nil,
+        at eventDate: Date
+    ) -> HungerEntry? {
+        guard hunger != nil || appetite != nil else { return nil }
+        let entry = HungerEntry(eventDate: eventDate, hunger: hunger, appetite: appetite, note: note)
+        context.insert(entry)
+        save()
+        return entry
+    }
+
+    func updateHunger(
+        _ entry: HungerEntry,
+        hunger: HungerLevel?,
+        appetite: AppetiteLevel?,
+        note: String?,
+        at eventDate: Date
+    ) {
+        entry.hunger = hunger
+        entry.appetite = appetite
+        entry.note = note
+        entry.eventDate = eventDate
+        entry.updatedAt = .now
+        save()
+    }
+
+    func deleteHunger(_ entry: HungerEntry) {
+        context.delete(entry)
+        save()
+    }
+
     // MARK: - Notes
 
     @discardableResult
@@ -248,6 +351,14 @@ final class DiaryEntryStore {
 
     func note(id: UUID) -> JournalNote? {
         try? context.fetch(FetchDescriptor<JournalNote>(predicate: #Predicate { $0.id == id })).first
+    }
+
+    func food(id: UUID) -> FoodEntry? {
+        try? context.fetch(FetchDescriptor<FoodEntry>(predicate: #Predicate { $0.id == id })).first
+    }
+
+    func hunger(id: UUID) -> HungerEntry? {
+        try? context.fetch(FetchDescriptor<HungerEntry>(predicate: #Predicate { $0.id == id })).first
     }
 
     private func save() {

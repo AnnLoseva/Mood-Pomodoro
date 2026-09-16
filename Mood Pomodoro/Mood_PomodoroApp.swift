@@ -16,6 +16,10 @@ struct Mood_PomodoroApp: App {
     @State private var sessionManager: SessionManager
     @State private var cycleStore: CycleStore
     @State private var diaryStore: DiaryEntryStore
+    /// Sleep has its own, local-only container — see `LocalHealthStore`.
+    /// It is deliberately not part of `.modelContainer(container)` below, so
+    /// health data cannot reach the CloudKit-backed store.
+    @State private var sleepStore = SleepStore()
     @State private var cloudSync = CloudSyncStatus()
     private let reasonsStore = ReasonsStore.shared
 
@@ -58,6 +62,7 @@ struct Mood_PomodoroApp: App {
                 .environment(cloudSync)
                 .environment(cycleStore)
                 .environment(diaryStore)
+                .environment(sleepStore)
                 .modelContainer(container)
                 .sheet(isPresented: $showQuickCheckIn) {
                     QuickCheckInSheet(
@@ -86,6 +91,11 @@ struct Mood_PomodoroApp: App {
                         showNotificationExplainer = true
                     }
                     sessionManager.refresh()
+                    // Background delivery is a hint, never a schedule — iOS
+                    // decides when to wake us, so the app also reads sleep
+                    // itself on launch. Both paths have to work.
+                    sleepStore.startObserving()
+                    await sleepStore.refresh()
                     await cloudSync.refresh(usingCloudKitStore: PersistenceController.isUsingCloudKit)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .howAreYouRequestCheckIn)) { output in
@@ -99,6 +109,9 @@ struct Mood_PomodoroApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             sessionManager.refresh()
+            // Incremental: asks HealthKit what changed rather than
+            // re-reading a month of history on every activation.
+            Task { await sleepStore.refresh() }
             if let session = sessionManager.activeSession {
                 Task { await NotificationScheduler.topUpIfNeeded(for: session) }
             }

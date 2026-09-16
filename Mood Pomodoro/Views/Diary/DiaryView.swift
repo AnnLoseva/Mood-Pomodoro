@@ -25,6 +25,9 @@ struct DiaryView: View {
     }
 
     @Environment(SessionManager.self) private var sessionManager
+    /// Sleep comes from its own local-only store, not from `@Query`: it is
+    /// deliberately outside the CloudKit container (see `LocalHealthStore`).
+    @Environment(SleepStore.self) private var sleepStore
 
     @Query private var sessions: [FocusSession]
     @Query private var checkIns: [CheckIn]
@@ -33,6 +36,8 @@ struct DiaryView: View {
     @Query private var supportEntries: [SupportEntry]
     @Query private var notes: [JournalNote]
     @Query private var conditionEvents: [ConditionEvent]
+    @Query private var foodEntries: [FoodEntry]
+    @Query private var hungerEntries: [HungerEntry]
 
     @State private var mode: Mode = .day
     @State private var selectedDate: Date = .now
@@ -53,8 +58,18 @@ struct DiaryView: View {
             supportEntries: supportEntries,
             notes: notes,
             diaryFactors: conditionEvents,
+            foodEntries: foodEntries,
+            hungerEntries: hungerEntries,
+            healthCycleMarks: sleepStore.cycleMarks,
+            healthMedication: sleepStore.medicationDay(for: selectedDate, calendar: calendar),
             calendar: calendar
         )
+    }
+
+    /// The month's sleep, read from the local health store.
+    private var monthSleep: [SleepSessionSummary] {
+        guard let interval = calendar.dateInterval(of: .month, for: selectedDate) else { return [] }
+        return sleepStore.sessions(in: interval)
     }
 
     private var monthlySummary: MonthlySummary {
@@ -65,6 +80,10 @@ struct DiaryView: View {
             categories: categories,
             cycleEntries: cycleEntries,
             supportEntries: supportEntries,
+            foodEntries: foodEntries,
+            hungerEntries: hungerEntries,
+            healthCycleMarks: sleepStore.cycleMarks,
+            healthMedication: sleepStore.medicationDays,
             calendar: calendar
         )
     }
@@ -91,13 +110,18 @@ struct DiaryView: View {
                                 case .day:
                                     DiaryDayView(
                                         summary: dailySummary,
+                                        sleep: sleepStore.daySummary(for: selectedDate, calendar: calendar),
                                         isToday: isToday,
                                         onQuickMood: { showQuickCheckIn = true },
                                         onAdd: { entrySheet = $0 },
                                         onEdit: { entrySheet = DiaryEntrySheet(editing: $0) }
                                     )
                                 case .month:
-                                    DiaryMonthView(summary: monthlySummary, isWide: isWide) { day in
+                                    DiaryMonthView(
+                                        summary: monthlySummary,
+                                        sleep: monthSleep,
+                                        isWide: isWide
+                                    ) { day in
                                         selectedDate = day
                                         mode = .day
                                     }
@@ -174,8 +198,11 @@ struct DiaryView: View {
     /// starts on the day being viewed and lets the date be changed.
     private var addMenu: some View {
         Menu {
-            Button(L("🌿 Деятельность", "🌿 Activity")) { entrySheet = .activity(editing: nil) }
             Button(L("🙂 Настроение", "🙂 Mood")) { entrySheet = .mood(editing: nil) }
+            Button(L("🍽 Еда", "🍽 Food")) { entrySheet = .food(editing: nil) }
+            Button(L("🍎 Голод / аппетит", "🍎 Hunger / appetite")) { entrySheet = .hunger(editing: nil) }
+            Button(L("🌙 Сон", "🌙 Sleep")) { entrySheet = .sleep(editing: nil) }
+            Button(L("🌿 Деятельность", "🌿 Activity")) { entrySheet = .activity(editing: nil) }
             Button(L("💊 Поддержка", "💊 Support")) { entrySheet = .support }
             Button(L("🌸 Цикл", "🌸 Cycle")) { entrySheet = .cycle }
             Button(L("☕ Фактор", "☕ Factor")) { entrySheet = .factor(editing: nil) }

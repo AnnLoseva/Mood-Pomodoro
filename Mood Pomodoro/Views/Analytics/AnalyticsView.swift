@@ -14,6 +14,8 @@ struct AnalyticsView: View {
         case overview
         case conditions
         case activities
+        case food
+        case sleep
         case compare
         var id: String { rawValue }
 
@@ -22,24 +24,34 @@ struct AnalyticsView: View {
             case .overview: return L("Обзор", "Overview")
             case .conditions: return L("Условия", "Conditions")
             case .activities: return L("Активности", "Activities")
+            case .food: return L("Еда", "Food")
+            case .sleep: return L("Сон", "Sleep")
             case .compare: return L("Сравнить", "Compare")
             }
         }
     }
 
     @Query private var allSessions: [FocusSession]
+    @Query private var foodEntries: [FoodEntry]
+    @Query private var hungerEntries: [HungerEntry]
+    @Environment(SleepStore.self) private var sleepStore
     @State private var section: Section = .overview
     @State private var showExport = false
 
     private var finishedOrActive: [FocusSession] { allSessions }
     private var hasAnyCheckIns: Bool { allSessions.contains { !($0.checkIns ?? []).isEmpty } }
+    /// Food is its own kind of record, so a diary with food but no sessions
+    /// still has analytics worth opening.
+    private var hasAnyData: Bool {
+        hasAnyCheckIns || !foodEntries.isEmpty || !hungerEntries.isEmpty || !sleepStore.sessions.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 ForestBackdrop()
 
-                if !hasAnyCheckIns {
+                if !hasAnyData {
                     emptyState
                 } else {
                     VStack(spacing: 0) {
@@ -49,6 +61,8 @@ struct AnalyticsView: View {
                             case .overview: OverviewAnalyticsView()
                             case .conditions: FactorsAnalyticsView()
                             case .activities: ActivitiesAnalyticsView()
+                            case .food: FoodAnalyticsView()
+                            case .sleep: SleepAnalyticsView()
                             case .compare: CompareAnalyticsView()
                             }
                         }

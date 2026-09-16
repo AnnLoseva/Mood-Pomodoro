@@ -18,6 +18,11 @@ enum DiaryEntrySheet: Identifiable {
     case cycle
     case factor(editing: UUID?)
     case note(editing: UUID?)
+    case food(editing: UUID?)
+    case hunger(editing: UUID?)
+    /// Sleep is keyed by its `deterministicKey`, not a `UUID`: it lives in
+    /// the local health store and is identified by the night it describes.
+    case sleep(editing: String?)
 
     var id: String {
         switch self {
@@ -27,6 +32,9 @@ enum DiaryEntrySheet: Identifiable {
         case .cycle: return "cycle"
         case .factor(let id): return "factor-\(id?.uuidString ?? "new")"
         case .note(let id): return "note-\(id?.uuidString ?? "new")"
+        case .food(let id): return "food-\(id?.uuidString ?? "new")"
+        case .hunger(let id): return "hunger-\(id?.uuidString ?? "new")"
+        case .sleep(let key): return "sleep-\(key ?? "new")"
         }
     }
 
@@ -37,6 +45,9 @@ enum DiaryEntrySheet: Identifiable {
         case .support: self = .support
         case .factor(let id): self = .factor(editing: id)
         case .note(let id): self = .note(editing: id)
+        case .food(let id): self = .food(editing: id)
+        case .hunger(let id): self = .hunger(editing: id)
+        case .sleep(let key): self = .sleep(editing: key)
         }
     }
 }
@@ -55,6 +66,9 @@ struct DiaryEntrySheetView: View {
         case .cycle: CycleLogSheet(date: day)
         case .factor(let id): FactorEntrySheet(editingID: id, day: day)
         case .note(let id): NoteEntrySheet(editingID: id, day: day)
+        case .food(let id): FoodEntrySheet(editingID: id, day: day)
+        case .hunger(let id): HungerEntrySheet(editingID: id, day: day)
+        case .sleep(let key): SleepEntrySheet(editingID: key, day: day)
         }
     }
 }
@@ -665,9 +679,13 @@ struct DiaryFormScaffold<Content: View>: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
+                    // A long title ("🍎 Голод / аппетит") would otherwise be
+                    // truncated between Отмена and Сохранить.
                     Text(title)
                         .font(.lora(17, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L("Отмена", "Cancel")) { dismiss() }

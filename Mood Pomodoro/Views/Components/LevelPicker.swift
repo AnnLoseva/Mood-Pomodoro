@@ -62,3 +62,53 @@ struct LevelPickerRow<Level: LevelScale>: View {
         }
     }
 }
+
+/// The same five-step row for a `ScaleStep` that has no artwork — hunger,
+/// appetite and fullness. Emoji and the step's position stand in for the
+/// illustration, and the chosen step's name is spelled out underneath, so
+/// the number never has to be read as a score.
+///
+/// Optional in exactly the way `LevelPickerRow` is: tapping the chosen step
+/// again clears it back to "не отмечено", which is not the middle of the
+/// scale and is never stored as one.
+struct ScaleStepPickerRow<Step: ScaleStep>: View {
+    @Binding var selection: Step?
+    var accentColor: Color = AppTheme.forest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(Step.orderedCases.reversed(), id: \.id) { step in
+                    let isSelected = selection == step
+                    Button {
+                        selection = isSelected ? nil : step
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(step.emoji)
+                                .font(.system(size: 20))
+                            Text("\(Int(step.scale))")
+                                .font(.lora(12, weight: isSelected ? .semibold : .regular).monospacedDigit())
+                                .foregroundStyle(isSelected ? accentColor : AppTheme.inkSoft)
+                        }
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(isSelected ? accentColor.opacity(0.18) : AppTheme.parchment.opacity(0.5))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(isSelected ? accentColor : AppTheme.border, lineWidth: isSelected ? 2 : 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(step.label)
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                }
+            }
+            Text(selection?.label ?? L("Не отмечено", "Not recorded"))
+                .font(.lora(13, weight: selection == nil ? .regular : .medium))
+                .foregroundStyle(selection == nil ? AppTheme.inkSoft : AppTheme.ink)
+        }
+    }
+}

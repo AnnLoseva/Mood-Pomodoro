@@ -9,7 +9,13 @@ import SwiftUI
 /// added to it — including after the fact. Every manual row is tappable and
 /// opens its own edit form; nothing here asks her to fill anything in.
 struct DiaryDayView: View {
+    @Environment(SleepStore.self) private var sleepStore
+
     let summary: DailySummary
+    /// Sleep is passed in rather than queried: it lives in the local-only
+    /// health store, outside the CloudKit container the rest of the diary
+    /// reads through `@Query`.
+    let sleep: SleepDaySummary
     let isToday: Bool
     let onQuickMood: () -> Void
     let onAdd: (DiaryEntrySheet) -> Void
@@ -17,14 +23,21 @@ struct DiaryDayView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if summary.isEmpty {
+            // A night with no check-ins is still a day with something in it.
+            if summary.isEmpty && sleep.isEmpty {
                 emptyCard
             } else {
-                moodCard
-                if !summary.timelineEvents.isEmpty { timelineCard }
-                if !summary.activities.isEmpty { studyCard }
-                if !summary.conditions.isEmpty { conditionsCard }
+                DayMarkersRow(summary: summary, sleep: sleep)
+                if !summary.isEmpty {
+                    moodCard
+                    if !summary.timelineEvents.isEmpty { timelineCard }
+                    if !summary.food.isEmpty { foodCard }
+                    if !summary.activities.isEmpty { studyCard }
+                    if !summary.conditions.isEmpty { conditionsCard }
+                }
             }
+            if summary.food.isEmpty { addFoodCard }
+            sleepCard
             supportCard
             cycleCard
         }
@@ -135,6 +148,111 @@ struct DiaryDayView: View {
         }
     }
 
+    /// The day's food, as it was recorded — counts and times, nothing else.
+    /// No score, no "хорошо/плохо поела", no calories: the question this
+    /// answers is "как я ела", not "правильно ли я ела".
+    private var foodCard: some View {
+        DiaryCard(title: L("🍽 Еда", "🍽 Food")) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 18) {
+                    stat(title: L("Приёмов еды", "Meals"), value: "\(summary.food.mealCount)")
+                    if let hunger = summary.food.averageHungerBeforeMeals {
+                        stat(
+                            title: L("Голод перед едой", "Hunger before meals"),
+                            value: String(format: "%.1f / 5", hunger)
+                        )
+                    }
+                    if let appetite = summary.food.averageAppetite {
+                        stat(title: L("Аппетит", "Appetite"), value: String(format: "%.1f / 5", appetite))
+                    }
+                }
+
+                if !summary.food.categoryCounts.isEmpty {
+                    FlowLayout(spacing: 8) {
+                        ForEach(summary.food.categoryCounts) { item in
+                            HStack(spacing: 5) {
+                                Image(item.category.imageName)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 22, height: 22)
+                                Text("\(item.category.label) — \(item.count)")
+                                    .font(.lora(13))
+                                    .foregroundStyle(AppTheme.ink)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule(style: .continuous).fill(AppTheme.parchment.opacity(0.6)))
+                            .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+                        }
+                    }
+                }
+
+                if !foodRows.isEmpty {
+                    Divider().background(AppTheme.border)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(foodRows) { event in
+                            Button {
+                                if let target = event.target { onEdit(target) }
+                            } label: {
+                                TimelineRow(event: event).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                if summary.food.averageHunger != nil || summary.food.averageAppetite != nil {
+                    DiaryNote(text: hungerAppetiteLine)
+                }
+                addFoodButtons
+            }
+        }
+    }
+
+    /// Food and hunger/appetite on one clock, oldest first — the same rows
+    /// the day timeline shows, gathered where the food block can be read on
+    /// its own.
+    private var foodRows: [TimelineEvent] {
+        summary.timelineEvents.filter { $0.kind == .food || $0.kind == .hunger }
+    }
+
+    private var hungerAppetiteLine: String {
+        var parts: [String] = []
+        if let hunger = summary.food.averageHunger {
+            parts.append(L("средний голод \(String(format: "%.1f", hunger))", "average hunger \(String(format: "%.1f", hunger))"))
+        }
+        if let appetite = summary.food.averageAppetite {
+            parts.append(L("средний аппетит \(String(format: "%.1f", appetite))", "average appetite \(String(format: "%.1f", appetite))"))
+        }
+        let figures = parts.joined(separator: ", ")
+        return L("За день: \(figures). Голод и аппетит считаются отдельно — это разные вещи.", "Today: \(figures). Hunger and appetite are counted separately — they're different things.")
+    }
+
+    /// Shown on its own when nothing was eaten *that was written down* —
+    /// phrased as an offer, never as a missing entry to fill in.
+    private var addFoodCard: some View {
+        DiaryCard(title: L("🍽 Еда", "🍽 Food")) {
+            VStack(alignment: .leading, spacing: 10) {
+                DiaryNote(text: L("Еда за этот день не отмечена.", "No food recorded for this day."))
+                addFoodButtons
+            }
+        }
+    }
+
+    private var addFoodButtons: some View {
+        HStack(spacing: 14) {
+            Button(L("Добавить еду", "Add food")) { onAdd(.food(editing: nil)) }
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .buttonStyle(.plain)
+            Button(L("Голод / аппетит", "Hunger / appetite")) { onAdd(.hunger(editing: nil)) }
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .buttonStyle(.plain)
+            Spacer(minLength: 0)
+        }
+    }
+
     private var studyCard: some View {
         DiaryCard(title: L("📚 Учёба", "📚 Study")) {
             VStack(alignment: .leading, spacing: 14) {
@@ -187,6 +305,20 @@ struct DiaryDayView: View {
         }
     }
 
+    private var sleepCard: some View {
+        SleepCard(
+            summary: sleep,
+            isConnected: sleepStore.isHealthKitEnabled,
+            isAvailable: sleepStore.isHealthKitAvailable,
+            isImporting: sleepStore.isImporting,
+            needsAdditionalPermission: sleepStore.needsAdditionalPermission,
+            onConnect: { Task { await sleepStore.connectHealthKit() } },
+            onRefresh: { Task { await sleepStore.refreshRequestingAccessIfNeeded() } },
+            onAddManual: { onAdd(.sleep(editing: nil)) },
+            onEdit: { onEdit(.sleep($0)) }
+        )
+    }
+
     /// Tracking only — the card states the mark and offers to change it,
     /// nothing else. "Не отмечено" is shown as its own state.
     private var supportCard: some View {
@@ -204,10 +336,18 @@ struct DiaryDayView: View {
         }
     }
 
+    /// Names the source when the mark came from Apple Health, so a day the
+    /// user didn't mark herself never looks like one she did.
     private var supportLine: String {
         guard let support = summary.support else { return L("— Не отмечено", "— Not recorded") }
-        let when = support.time.map(DateFormatting.time) ?? L("в течение дня", "during the day")
-        return "\(support.status.glyph) \(support.status.label) · \(when)"
+        var parts = ["\(support.status.glyph) \(support.status.label)"]
+        if support.source == .healthKit {
+            parts.append(L("из Apple Health", "from Apple Health"))
+            if let detail = support.note { parts.append(detail) }
+        } else {
+            parts.append(support.time.map(DateFormatting.time) ?? L("в течение дня", "during the day"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var cycleCard: some View {
@@ -229,6 +369,10 @@ struct DiaryDayView: View {
                     }
                 } else {
                     DiaryNote(text: L("Цикл не отмечен — можно вести, если хочется, и не вести, если нет.", "No cycle recorded — track it if you'd like to, skip it if not."))
+                }
+
+                if sleepStore.isHealthKitEnabled, !sleepStore.cycleMarks.isEmpty {
+                    DiaryNote(text: L("Дни менструации подтягиваются и из Apple Health — там, где ты не отметила их сама.", "Period days are also read from Apple Health — for the days you didn't mark yourself."))
                 }
 
                 ForEach(summary.cycleEvents, id: \.self) { event in

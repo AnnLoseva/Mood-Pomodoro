@@ -11,6 +11,9 @@ import Charts
 /// thing caused another.
 struct DiaryMonthView: View {
     let summary: MonthlySummary
+    /// Read from the local-only health store, not from the CloudKit
+    /// container the rest of the month comes from.
+    let sleep: [SleepSessionSummary]
     /// Regular width (iPad) lays the cards out two-up instead of stacking.
     let isWide: Bool
     let onSelectDay: (Date) -> Void
@@ -33,6 +36,8 @@ struct DiaryMonthView: View {
                     studyCard.frame(maxWidth: .infinity)
                     cycleCard.frame(maxWidth: .infinity)
                 }
+                if !summary.food.isEmpty { foodCard }
+                if let sleepStats { sleepCard(sleepStats) }
                 if !summary.supportStats.isEmpty { supportCard }
                 factorsCard
             }
@@ -41,6 +46,8 @@ struct DiaryMonthView: View {
                 calendarCard
                 moodCard
                 studyCard
+                if !summary.food.isEmpty { foodCard }
+                if let sleepStats { sleepCard(sleepStats) }
                 if !summary.supportStats.isEmpty { supportCard }
                 factorsCard
                 cycleCard
@@ -107,6 +114,174 @@ struct DiaryMonthView: View {
                 }
                 DiaryNote(text: L("Среднее настроение в дни с такой отметкой — наблюдение по твоим данным, не вывод о действии поддержки. Дни без отметки сюда не входят.", "Average mood on days with this mark — an observation from your own data, not a conclusion about what the support does. Days without a mark aren't included."))
             }
+        }
+    }
+
+    private var sleepStats: SleepPeriodStatistics? {
+        guard let first = sleep.first?.day,
+              let interval = Calendar.current.dateInterval(of: .month, for: first)
+        else { return nil }
+        return AnalyticsService.sleepStatistics(sessions: sleep, in: interval)
+    }
+
+    /// The month's nights, as recorded. Averages and extremes — no score, no
+    /// target, and nothing that calls a night good or bad.
+    private func sleepCard(_ stats: SleepPeriodStatistics) -> some View {
+        DiaryCard(title: L("🌙 Сон", "🌙 Sleep")) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 18) {
+                    stat(
+                        title: L("Средний сон", "Average sleep"),
+                        value: stats.averageSleep.map(DurationFormatting.compact) ?? "—"
+                    )
+                    stat(title: L("Ночей с данными", "Nights with data"), value: "\(stats.nightCount)")
+                }
+                if let shortest = stats.shortest, let longest = stats.longest, stats.nightCount > 1 {
+                    HStack(spacing: 18) {
+                        stat(
+                            title: L("Самая короткая", "Shortest"),
+                            value: DurationFormatting.compact(shortest.totalSleep)
+                        )
+                        stat(
+                            title: L("Самая длинная", "Longest"),
+                            value: DurationFormatting.compact(longest.totalSleep)
+                        )
+                    }
+                }
+                if stats.points.count >= 2 {
+                    Divider().background(AppTheme.border)
+                    sleepChart(stats.points)
+                }
+                if stats.napCount > 0 {
+                    Divider().background(AppTheme.border)
+                    HStack(spacing: 18) {
+                        stat(title: L("Дневной сон", "Naps"), value: "\(stats.napCount)")
+                        stat(
+                            title: L("Средняя длина", "Average length"),
+                            value: stats.averageNap.map(DurationFormatting.compact) ?? "—"
+                        )
+                    }
+                }
+                DiaryNote(text: L("Сон читается из Apple Health на этом устройстве. Подробнее — во вкладке «Аналитика».", "Sleep is read from Apple Health on this device. More in the Analytics tab."))
+            }
+        }
+    }
+
+    private func sleepChart(_ points: [SleepDayPoint]) -> some View {
+        Chart(points) { point in
+            BarMark(
+                x: .value("Дата", point.day, unit: .day),
+                y: .value("Сон", point.hours)
+            )
+            .foregroundStyle(SleepStage.core.color)
+            .cornerRadius(3)
+        }
+        .chartYAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine().foregroundStyle(AppTheme.border)
+                if let hours = value.as(Double.self) {
+                    AxisValueLabel {
+                        Text(L("\(Int(hours))ч", "\(Int(hours))h"))
+                            .font(.lora(10))
+                            .foregroundStyle(AppTheme.inkSoft)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: 7)) { value in
+                AxisGridLine().foregroundStyle(AppTheme.border)
+                if let date = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(DateFormatting.compactDate(date))
+                            .font(.lora(10))
+                            .foregroundStyle(AppTheme.inkSoft)
+                    }
+                }
+            }
+        }
+        .frame(height: 150)
+    }
+
+    /// The month's food, as counts. Nothing here ranks the categories,
+    /// scores the month or says how the user "did" — the figures are
+    /// observations, and hunger and appetite are always reported apart.
+    private var foodCard: some View {
+        DiaryCard(title: L("🍽 Еда", "🍽 Food")) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 18) {
+                    stat(title: L("Приёмов еды", "Meals"), value: "\(summary.food.mealCount)")
+                    if let hunger = summary.food.averageHunger {
+                        stat(title: L("Средний голод", "Average hunger"), value: String(format: "%.1f", hunger))
+                    }
+                    if let appetite = summary.food.averageAppetite {
+                        stat(title: L("Средний аппетит", "Average appetite"), value: String(format: "%.1f", appetite))
+                    }
+                }
+
+                if !summary.food.categoryCounts.isEmpty {
+                    Divider().background(AppTheme.border)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L("Категории еды", "Food categories"))
+                            .font(.lora(14, weight: .medium))
+                            .foregroundStyle(AppTheme.inkSoft)
+                        ForEach(summary.food.categoryCounts) { item in
+                            countRow(
+                                label: item.category.label,
+                                count: item.count,
+                                imageName: item.category.imageName
+                            )
+                        }
+                    }
+                }
+
+                if !summary.food.treats.isEmpty {
+                    Divider().background(AppTheme.border)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L("Вредная еда", "Junk / treat"))
+                            .font(.lora(14, weight: .medium))
+                            .foregroundStyle(AppTheme.inkSoft)
+                        ForEach(summary.food.treats.byType, id: \.type) { item in
+                            countRow(label: "\(item.type.emoji) \(item.type.label)", count: item.count)
+                        }
+                        if !summary.food.treats.byAmount.isEmpty {
+                            Text(L("Количество", "How much"))
+                                .font(.lora(13))
+                                .foregroundStyle(AppTheme.inkSoft)
+                                .padding(.top, 2)
+                            ForEach(summary.food.treats.byAmount, id: \.amount) { item in
+                                countRow(label: item.amount.label, count: item.count)
+                            }
+                        }
+                    }
+                }
+
+                if let before = summary.food.averageHungerBeforeMeals {
+                    DiaryNote(text: L(
+                        "Средний голод перед едой: \(String(format: "%.1f", before)) / 5 — по \(summary.food.mealsWithHungerBefore) записям, где голод был отмечен незадолго до еды.",
+                        "Average hunger before meals: \(String(format: "%.1f", before)) / 5 — from \(summary.food.mealsWithHungerBefore) entries where hunger was recorded shortly before eating."
+                    ))
+                }
+                DiaryNote(text: L("Это счётчики твоих записей, а не оценка питания. Подробнее — во вкладке «Аналитика».", "These are counts of your own entries, not an assessment of how you eat. More in the Analytics tab."))
+            }
+        }
+    }
+
+    private func countRow(label: String, count: Int, imageName: String? = nil) -> some View {
+        HStack(spacing: 10) {
+            if let imageName {
+                Image(imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 26, height: 26)
+            }
+            Text(label)
+                .font(.lora(14))
+                .foregroundStyle(AppTheme.ink)
+            Spacer(minLength: 8)
+            Text("\(count)")
+                .font(.lora(15, weight: .semibold).monospacedDigit())
+                .foregroundStyle(AppTheme.forest)
         }
     }
 

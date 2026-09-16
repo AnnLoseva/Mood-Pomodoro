@@ -254,7 +254,7 @@ struct DiaryDayView: View {
     }
 
     private var studyCard: some View {
-        DiaryCard(title: L("📚 Учёба", "📚 Study")) {
+        DiaryCard(title: L("🌿 Занятия", "🌿 Activities")) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) {
                     stat(title: L("Активно", "Active"), value: DurationFormatting.compact(summary.totalActiveDuration))
@@ -265,6 +265,10 @@ struct DiaryDayView: View {
                 }
                 Divider().background(AppTheme.border)
                 VStack(spacing: 12) {
+                    ForEach(summary.sessionTypes) { item in
+                        Text("\(SessionType.label(for: item.type)) · \(item.sessionCount) · \(DurationFormatting.compact(item.activeDuration))")
+                            .font(.lora(13)).foregroundStyle(AppTheme.ink)
+                    }
                     ForEach(summary.activities) { activity in
                         ActivityStatRow(stats: activity)
                     }

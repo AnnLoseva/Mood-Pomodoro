@@ -45,7 +45,7 @@ extension AnalyticsService {
     ) -> [DayAggregate] {
         func inRange(_ date: Date) -> Bool {
             guard let interval else { return true }
-            return interval.contains(date)
+            return date >= interval.start && date < interval.end
         }
         func day(_ date: Date) -> Date { calendar.startOfDay(for: date) }
 
@@ -58,7 +58,7 @@ extension AnalyticsService {
         // A session's time belongs to the day it started, the same rule the
         // diary and the history already use.
         let sessionsByDay = Dictionary(grouping: sessions.filter { inRange($0.startDate) }) { day($0.startDate) }
-        let sleepByDay = Dictionary(grouping: sleepSessions.filter { !$0.isSuperseded && inRange($0.day) }) { day($0.day) }
+        let sleepByDay = Dictionary(grouping: SleepAggregationService.resolveOverlaps(sessions: sleepSessions).filter { !$0.isSuperseded && inRange($0.day) }) { day($0.day) }
         let supportByDay = Dictionary(
             grouping: supportEntries.filter { $0.trackerKey == SupportEntry.defaultTrackerKey && inRange($0.day) }
         ) { day($0.day) }
@@ -105,7 +105,7 @@ extension AnalyticsService {
 
             return DayAggregate(
                 day: date,
-                mood: averageMood(of: dayCheckIns),
+                mood: timeWeightedAverageMood(of: dayCheckIns),
                 moodCount: dayCheckIns.count,
                 energy: averageScale(energies),
                 energyCount: energies.count,
@@ -127,7 +127,8 @@ extension AnalyticsService {
                 impulseCount: dayImpulses.count,
                 impulsesByCategory: impulsesByCategory,
                 durationByType: durationByType,
-                sessionCount: daySessions.count
+                sessionCount: daySessions.count,
+                sessionCountsByType: Dictionary(grouping: daySessions) { $0.sessionType }.mapValues(\.count)
             )
         }
     }
@@ -165,6 +166,9 @@ extension AnalyticsService {
             scales: scales,
             averageSleep: nights.isEmpty ? nil : nights.reduce(0, +) / Double(nights.count),
             sleepDayCount: nights.count,
+            sessionCountsByType: days.reduce(into: [:]) { result, day in
+                for (type, count) in day.sessionCountsByType { result[type, default: 0] += count }
+            },
             mealCount: days.reduce(0) { $0 + $1.mealCount },
             treatCount: days.reduce(0) { $0 + $1.treatCount },
             impulseCount: days.reduce(0) { $0 + $1.impulseCount },
@@ -307,12 +311,11 @@ extension AnalyticsService {
         for stats in summary.sessionTypes {
             durationByType[stats.type, default: 0] += stats.activeDuration
         }
-        let night = sleep?.night
         return DayState(
             date: summary.date,
             averageMood: summary.moodStats.average,
             moodCount: summary.moodStats.checkInCount,
-            sleepDuration: night?.totalSleep,
+            sleepDuration: sleep?.nightTotal,
             napDuration: sleep?.napTotal ?? 0,
             sleepQuality: sleep?.quality,
             cycleDay: summary.cycleDay,

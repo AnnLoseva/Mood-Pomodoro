@@ -42,13 +42,16 @@ struct ExportInput {
     var conditionEvents: [ConditionEvent] = []
     var foodEntries: [FoodEntry] = []
     var hungerEntries: [HungerEntry] = []
+    var emotionEntries: [EmotionEntry] = []
+    var impulseEntries: [ImpulseEntry] = []
+    var manualSleep: [SleepSessionSummary] = []
 
     /// When anything was first recorded — where "all time" starts.
     var earliestDate: Date? {
         let dates = sessions.map(\.startDate) + checkIns.map(\.timestamp) + cycleEntries.map(\.date)
             + supportEntries.map(\.day) + notes.map(\.timestamp) + conditionEvents.map(\.timestamp)
             + foodEntries.map(\.eventDate) + hungerEntries.map(\.eventDate)
-        return dates.min()
+        return (dates + emotionEntries.map(\.eventDate) + impulseEntries.map(\.eventDate) + manualSleep.filter { $0.source == .manual }.map(\.day)).min()
     }
 }
 
@@ -120,6 +123,8 @@ private struct ExportBuilder {
             diaryFactors: input.conditionEvents,
             foodEntries: options.includeFood ? input.foodEntries : [],
             hungerEntries: options.includeFood ? input.hungerEntries : [],
+            emotionEntries: input.emotionEntries,
+            impulseEntries: input.impulseEntries,
             calendar: calendar
         )
     }
@@ -176,6 +181,13 @@ private struct ExportBuilder {
         if !anyDay {
             lines.append("")
             lines.append(L("За этот период записей нет.", "No entries in this period."))
+        }
+        for sleep in input.manualSleep where sleep.source == .manual && inRange(sleep.day) {
+            lines.append("- " + sleep.kind.label + " · " + sleep.start.formatted() + " – " + sleep.end.formatted() + " · " + DurationFormatting.compact(sleep.totalSleep) + (sleep.quality.map { " · " + $0.label } ?? ""))
+            if options.includeNotes, let note = sleep.note { lines.append("  " + note) }
+        }
+        for session in input.sessions where inRange(session.startDate) {
+            lines.append("- " + Ldata(session.activity) + " · " + SessionType.label(for: session.sessionType) + " · " + session.startDate.formatted())
         }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -392,6 +404,8 @@ private struct ExportBuilder {
             if options.includeNotes, let note = entry.note, !note.isEmpty { text += " — “\(note)”" }
             text += recordedLaterSuffix(eventDate: entry.eventDate, createdAt: entry.createdAt)
             return text
+        case .emotion, .impulse:
+            return event.title + (options.includeNotes ? event.subtitle.map { " · " + $0 } ?? "" : "")
         case .note:
             return options.includeNotes ? "📝 “\(event.title)”" : nil
         case .support:
@@ -551,7 +565,31 @@ private struct ExportBuilder {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-        guard let data = try? encoder.encode(export), let text = String(data: data, encoding: .utf8) else { return "{}" }
+        guard let data = try? encoder.encode(export),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return "{}" }
+        object["emotions"] = input.emotionEntries.filter { !$0.isEmpty && inRange($0.eventDate) }.map { entry -> [String: Any] in
+            var row: [String: Any] = ["id": entry.id.uuidString, "time": iso.string(from: entry.eventDate), "recordedAt": iso.string(from: entry.createdAt), "emotions": entry.emotions.map(\.rawValue)]
+            if options.includeNotes { row["note"] = entry.note }
+            return row
+        }
+        object["impulses"] = input.impulseEntries.filter { inRange($0.eventDate) }.map { entry -> [String: Any] in
+            var row: [String: Any] = ["id": entry.id.uuidString, "time": iso.string(from: entry.eventDate), "recordedAt": iso.string(from: entry.createdAt), "category": entry.category.rawValue]
+            row["strength"] = entry.strength?.scale
+            row["outcome"] = entry.outcome?.rawValue
+            if options.includeNotes { row["note"] = entry.note }
+            return row
+        }
+        object["manualSleep"] = input.manualSleep.filter { $0.source == .manual && inRange($0.day) }.map { sleep -> [String: Any] in
+            var row: [String: Any] = ["start": iso.string(from: sleep.start), "end": iso.string(from: sleep.end), "kind": sleep.kind.rawValue, "durationSeconds": sleep.totalSleep, "excludedFromTotals": sleep.isSuperseded]
+            row["quality"] = sleep.quality?.rawValue
+            if options.includeNotes { row["note"] = sleep.note }
+            return row
+        }
+        if var rows = object["sessions"] as? [[String: Any]] {
+            for index in rows.indices { rows[index]["type"] = sessions[index].sessionType?.rawValue }
+            object["sessions"] = rows
+        }
+        guard let result = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), let text = String(data: result, encoding: .utf8) else { return "{}" }
         return text + "\n"
     }
 }

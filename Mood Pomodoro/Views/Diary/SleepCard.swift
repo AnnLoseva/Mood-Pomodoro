@@ -109,11 +109,19 @@ struct SleepCard: View {
 
 /// One night or nap: when, how long, its stages, and where it came from.
 struct SleepSessionBlock: View {
+    @Environment(SleepStore.self) private var store
     let session: SleepSessionSummary
     var onEdit: ((String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if session.source == .healthKit {
+                SleepQualityPicker(selection: Binding(get: { store.sessions.first { $0.id == session.id }?.quality }, set: { store.setQuality($0, forSleepID: session.id) }))
+            }
+            if let quality = session.quality { Text(quality.label).font(.lora(13)) }
+            if session.isSuperseded {
+                DiaryNote(text: L("Пересечение: исключено из итогов", "Overlap: excluded from totals"))
+            }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(session.kind.emoji) \(session.kind.label)")

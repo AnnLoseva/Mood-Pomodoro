@@ -26,6 +26,7 @@ struct SleepEntrySheet: View {
     @State private var wokeUp: Date
     @State private var kind: SleepKind = .night
     @State private var note = ""
+    @State private var quality: SleepQuality?
     @State private var loaded = false
 
     init(editingID: String?, day: Date) {
@@ -124,10 +125,11 @@ struct SleepEntrySheet: View {
             if let overlapping {
                 DiaryFormSection(L("Уже есть в Apple Health", "Already in Apple Health")) {
                     SleepSessionBlock(session: overlapping)
-                    DiaryNote(text: L("За это время уже есть запись из Apple Health. Если сохранить свою, в дневнике будут обе — сложены они не будут, но день покажет и ту, и другую.", "Apple Health already has a record for this stretch. If you save yours, the diary will show both — they're never added together, but the day will list each one."))
+                    DiaryNote(text: L("Ручная запись заменит пересекающуюся запись Apple Health целиком в итогах. Обе записи сохранятся.", "The manual entry replaces the entire overlapping Apple Health record in totals. Both records are retained."))
                 }
             }
 
+            SleepQualityPicker(selection: $quality)
             DiaryFormSection(L("Заметка", "Note")) {
                 TextField(L("Необязательно", "Optional"), text: $note, axis: .vertical)
                     .font(.lora(15))
@@ -148,6 +150,7 @@ struct SleepEntrySheet: View {
         wokeUp = record.endDate
         kind = record.kind
         note = record.note ?? ""
+        quality = record.quality
     }
 
     private func save() {
@@ -158,10 +161,11 @@ struct SleepEntrySheet: View {
                 start: fellAsleepDate,
                 end: wokeUpDate,
                 kind: kind,
+                quality: quality,
                 note: text
             )
         } else {
-            store.addManualSleep(start: fellAsleepDate, end: wokeUpDate, kind: kind, note: text)
+            store.addManualSleep(start: fellAsleepDate, end: wokeUpDate, kind: kind, quality: quality, note: text)
         }
     }
 
@@ -174,5 +178,35 @@ struct SleepEntrySheet: View {
     private func delete() {
         guard let editingID else { return }
         store.deleteSleep(id: editingID)
+    }
+}
+
+struct SleepQualityPicker: View {
+    @Binding var selection: SleepQuality?
+    var body: some View {
+        DiaryFormSection(L("Как спалось?", "How did you sleep?")) {
+            FlowLayout(spacing: 6) {
+                ForEach(SleepQuality.orderedCases, id: \.rawValue) { quality in
+                    DiaryChip(title: quality.label, isSelected: selection == quality) {
+                        selection = selection == quality ? nil : quality
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SleepEditorRoute: View {
+    @Environment(SleepStore.self) private var store
+    let editingID: String?
+    let day: Date
+    var body: some View {
+        if let id = editingID, let sleep = store.sessions.first(where: { $0.id == id }), sleep.source == .healthKit {
+            NavigationStack {
+                ScrollView { SleepSessionBlock(session: sleep).padding(20) }
+                    .background(AppTheme.parchmentCard)
+                    .navigationTitle(L("Сон из Apple Health", "Apple Health sleep"))
+            }
+        } else { SleepEntrySheet(editingID: editingID, day: day) }
     }
 }

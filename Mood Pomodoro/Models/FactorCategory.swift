@@ -99,3 +99,10 @@ struct ConditionSnapshotEntry: Codable, Hashable, Identifiable {
     /// category's, else nil (render the emoji instead).
     var resolvedIconImageName: String? { optionIconImageName ?? categoryIconImageName }
 }
+
+// Retain historical snapshots without offering a second emotion input.
+extension FactorCategory {
+    var isLegacyEmotionCategory: Bool {
+        canonicalData(name) == "Эмоциональное состояние" || iconImageName == "FactorEmotion"
+    }
+}

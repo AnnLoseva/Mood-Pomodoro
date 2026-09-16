@@ -38,12 +38,15 @@ struct DiaryView: View {
     @Query private var conditionEvents: [ConditionEvent]
     @Query private var foodEntries: [FoodEntry]
     @Query private var hungerEntries: [HungerEntry]
+    @Query private var emotionEntries: [EmotionEntry]
+    @Query private var impulseEntries: [ImpulseEntry]
 
     @State private var mode: Mode = .day
     @State private var selectedDate: Date = .now
     @State private var showQuickCheckIn = false
     @State private var entrySheet: DiaryEntrySheet?
     @State private var showExport = false
+    @State private var editingDay: Date?
 
     private let calendar = Calendar.current
 
@@ -60,6 +63,8 @@ struct DiaryView: View {
             diaryFactors: conditionEvents,
             foodEntries: foodEntries,
             hungerEntries: hungerEntries,
+            emotionEntries: emotionEntries,
+            impulseEntries: impulseEntries,
             healthCycleMarks: sleepStore.cycleMarks,
             healthMedication: sleepStore.medicationDay(for: selectedDate, calendar: calendar),
             calendar: calendar
@@ -82,6 +87,8 @@ struct DiaryView: View {
             supportEntries: supportEntries,
             foodEntries: foodEntries,
             hungerEntries: hungerEntries,
+            emotionEntries: emotionEntries,
+            impulseEntries: impulseEntries,
             healthCycleMarks: sleepStore.cycleMarks,
             healthMedication: sleepStore.medicationDays,
             calendar: calendar
@@ -106,6 +113,10 @@ struct DiaryView: View {
                             VStack(spacing: 16) {
                                 stepper
                                 addMenu
+                                UnifiedTimeline(date: selectedDate, period: mode == .day ? .day : .month) { target, day in
+                                    editingDay = day
+                                    entrySheet = DiaryEntrySheet(editing: target)
+                                }
                                 switch mode {
                                 case .day:
                                     DiaryDayView(
@@ -163,8 +174,8 @@ struct DiaryView: View {
             .sheet(isPresented: $showQuickCheckIn) {
                 QuickCheckInSheet(sessionID: sessionManager.activeSession?.id)
             }
-            .sheet(item: $entrySheet) { sheet in
-                DiaryEntrySheetView(sheet: sheet, day: selectedDate)
+            .sheet(item: $entrySheet, onDismiss: { editingDay = nil }) { sheet in
+                DiaryEntrySheetView(sheet: sheet, day: editingDay ?? selectedDate)
             }
             .sheet(isPresented: $showExport) {
                 ExportSheet()
@@ -198,6 +209,8 @@ struct DiaryView: View {
     /// starts on the day being viewed and lets the date be changed.
     private var addMenu: some View {
         Menu {
+            Button(L("✨ Эмоции", "✨ Emotions")) { entrySheet = .emotion(editing: nil) }
+            Button(L("⚡ Импульс", "⚡ Impulse")) { entrySheet = .impulse(editing: nil) }
             Button(L("🙂 Настроение", "🙂 Mood")) { entrySheet = .mood(editing: nil) }
             Button(L("🍽 Еда", "🍽 Food")) { entrySheet = .food(editing: nil) }
             Button(L("🍎 Голод / аппетит", "🍎 Hunger / appetite")) { entrySheet = .hunger(editing: nil) }

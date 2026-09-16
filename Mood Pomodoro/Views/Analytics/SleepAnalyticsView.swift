@@ -239,12 +239,12 @@ struct SleepAnalyticsView: View {
                     if group.appetiteCount > 0 {
                         figure(L("аппетит", "appetite"), group.averageAppetite, group.appetiteCount, AppTheme.rust)
                     }
-                    if group.studyDuration > 0 {
+                    if group.activityDuration > 0 {
                         HStack(spacing: 4) {
-                            Text(L("учёба", "study"))
+                            Text(L("занятия", "activities"))
                                 .font(.lora(12))
                                 .foregroundStyle(AppTheme.inkSoft)
-                            Text(DurationFormatting.compact(group.studyDuration / Double(group.dayCount)))
+                            Text(DurationFormatting.compact(group.activityDuration / Double(group.dayCount)))
                                 .font(.lora(14, weight: .semibold))
                                 .foregroundStyle(AppTheme.ink)
                         }

@@ -87,7 +87,7 @@ struct Mood_PomodoroApp: App {
                         showQuickCheckIn = true
                     }
                     let settings = await UNUserNotificationCenter.current().notificationSettings()
-                    if settings.authorizationStatus == .notDetermined {
+                    if settings.authorizationStatus == .notDetermined && ProcessInfo.processInfo.environment["MOOD_UI_TESTING"] != "1" {
                         showNotificationExplainer = true
                     }
                     sessionManager.refresh()

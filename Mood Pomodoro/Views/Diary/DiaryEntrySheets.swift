@@ -76,7 +76,7 @@ struct DiaryEntrySheetView: View {
         case .hunger(let id): HungerEntrySheet(editingID: id, day: day)
         case .emotion(let id): EmotionEntrySheet(editingID: id, day: day)
         case .impulse(let id): ImpulseEntrySheet(editingID: id, day: day)
-        case .sleep(let key): SleepEntrySheet(editingID: key, day: day)
+        case .sleep(let key): SleepEditorRoute(editingID: key, day: day)
         }
     }
 }
@@ -136,7 +136,7 @@ struct ActivityEntrySheet: View {
     var body: some View {
         DiaryFormScaffold(
             title: L("🌿 Деятельность", "🌿 Activity"),
-            canSave: DiaryDefaults.trimmed(activity) != nil && problem == nil,
+            canSave: DiaryDefaults.trimmed(activity) != nil && problem == nil && (editingID != nil || sessionType != nil),
             hint: problem,
             onSave: save,
             onDelete: deleteAction
@@ -436,7 +436,7 @@ struct SupportEntrySheet: View {
             }
             DiaryFormSection(L("Отметка", "Mark")) {
                 VStack(spacing: 8) {
-                    ForEach(SupportStatus.allCases) { option in
+                    ForEach([SupportStatus.taken, .notTaken, .unknown]) { option in
                         Button {
                             status = option
                         } label: {
@@ -533,7 +533,7 @@ struct FactorEntrySheet: View {
         _moment = State(initialValue: DiaryDefaults.defaultMoment(on: day))
     }
 
-    private var enabledCategories: [FactorCategory] { categories.filter(\.isEnabled) }
+    private var enabledCategories: [FactorCategory] { categories.filter { $0.isEnabled && (!$0.isLegacyEmotionCategory || $0.id == categoryID && editingID != nil) } }
 
     var body: some View {
         DiaryFormScaffold(

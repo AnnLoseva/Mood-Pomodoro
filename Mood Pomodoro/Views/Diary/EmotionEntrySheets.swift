@@ -302,7 +302,7 @@ struct SessionTypePicker: View {
             }
             if showsHint {
                 Text(selection == nil
-                     ? L("Необязательно. Одно и то же занятие бывает и учёбой, и работой, и отдыхом.", "Optional. The same activity can be study, work or rest on different days.")
+                     ? L("Выбери тип занятия: учёба, работа или отдых.", "Choose the activity type: study, work or rest.")
                      : L("Нажми ещё раз, чтобы снять отметку.", "Tap again to clear it."))
                     .font(.lora(11))
                     .foregroundStyle(AppTheme.inkSoft)

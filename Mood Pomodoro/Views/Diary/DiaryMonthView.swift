@@ -21,7 +21,7 @@ struct DiaryMonthView: View {
     var body: some View {
         // The calendar stays even in an empty month: it's also how the user
         // gets to a past day to fill in something she forgot.
-        if summary.isEmpty && summary.supportStats.isEmpty {
+        if summary.isEmpty && summary.supportStats.isEmpty && sleep.isEmpty && !summary.days.contains(where: \.isPeriodDay) {
             VStack(spacing: 16) {
                 calendarCard
                 emptyCard
@@ -351,7 +351,7 @@ struct DiaryMonthView: View {
     }
 
     private var studyCard: some View {
-        DiaryCard(title: L("📚 Учёба", "📚 Study")) {
+        DiaryCard(title: L("🌿 Занятия", "🌿 Activities")) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) {
                     stat(title: L("Всего активно", "Total active"), value: DurationFormatting.compact(summary.totalActiveDuration))
@@ -362,7 +362,11 @@ struct DiaryMonthView: View {
                 } else {
                     Divider().background(AppTheme.border)
                     VStack(spacing: 12) {
-                        ForEach(summary.activities) { activity in
+                        ForEach(summary.sessionTypes) { item in
+                        Text("\(SessionType.label(for: item.type)) · \(item.sessionCount) · \(DurationFormatting.compact(item.activeDuration))")
+                            .font(.lora(13)).foregroundStyle(AppTheme.ink)
+                    }
+                    ForEach(summary.activities) { activity in
                             ActivityStatRow(stats: activity)
                         }
                     }
@@ -517,6 +521,15 @@ struct MonthCalendarGrid: View {
                     lineWidth: isToday ? 2 : 1
                 )
             )
+            .overlay(alignment: .bottom) {
+                HStack(spacing: 4) {
+                    if day.supportStatus == .notTaken {
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .heavy))
+                            .foregroundStyle(.black).padding(2).background(.white, in: Circle())
+                    }
+                    if day.isPeriodDay { Circle().fill(.red).frame(width: 6, height: 6).overlay(Circle().stroke(.white, lineWidth: 0.75)) }
+                }.frame(height: 12).padding(.bottom, 1)
+            }
             .contentShape(shape)
             .accessibilityLabel(accessibilityText(for: day))
     }
@@ -532,7 +545,7 @@ struct MonthCalendarGrid: View {
     }
 
     private func accessibilityText(for day: DayMoodSummary) -> String {
-        let date = DateFormatting.fullDate(day.date)
+        let date = DateFormatting.fullDate(day.date) + ", " + (day.supportStatus?.label ?? L("Не отмечено", "Not recorded")) + (day.isPeriodDay ? L(", менструация", ", period") : "")
         guard let average = day.averageMood else { return L("\(date), нет данных", "\(date), no data") }
         return "\(date), \(Mood.nearest(to: average).label), \(String(format: "%.1f", average)), \(day.checkInCount) check-in"
     }
@@ -558,6 +571,7 @@ struct MonthCalendarGrid: View {
 struct MoodColorLegend: View {
     var body: some View {
         FlowLayout(spacing: 10) {
+            Text(L("× Не принято · 🔴 Менструация", "× Not taken · 🔴 Period")).font(.lora(11))
             ForEach(MoodColorScale.legend, id: \.mood) { item in
                 swatch(label: item.mood.label) {
                     RoundedRectangle(cornerRadius: 4, style: .continuous).fill(item.color)

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// One day, reduced to a single row of answers — the shape every
 /// day-to-day comparison in the app runs on.
@@ -57,6 +58,7 @@ struct DayAggregate: Identifiable {
     /// sessions. Breaks are excluded, as everywhere else.
     let durationByType: [SessionType?: TimeInterval]
     let sessionCount: Int
+    var sessionCountsByType: [SessionType?: Int] = [:]
 
     var totalActiveDuration: TimeInterval { durationByType.values.reduce(0, +) }
 
@@ -124,6 +126,19 @@ enum DayScaleMetric: String, CaseIterable, Identifiable, Sendable {
         case .appetite: return L("Аппетит", "Appetite")
         }
     }
+
+    /// Colours for the unified chart. Mood/energy/motivation match the day
+    /// chart; hunger and appetite sit apart from those three and from each
+    /// other, so five lines on one 1–5 axis stay tellable apart.
+    var color: Color {
+        switch self {
+        case .mood: return DayMetric.mood.color
+        case .energy: return DayMetric.energy.color
+        case .motivation: return DayMetric.motivation.color
+        case .hunger: return Color(red: 0.243, green: 0.537, blue: 0.518)
+        case .appetite: return Color(red: 0.769, green: 0.412, blue: 0.275)
+        }
+    }
 }
 
 /// One scale inside one group of days: the average *of daily averages*, how
@@ -158,6 +173,7 @@ struct DayContextGroup: Identifiable {
     /// Average night length over the days in the group that had one.
     let averageSleep: TimeInterval?
     let sleepDayCount: Int
+    var sessionCountsByType: [SessionType?: Int] = [:]
 
     let mealCount: Int
     let treatCount: Int

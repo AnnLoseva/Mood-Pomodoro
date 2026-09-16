@@ -154,8 +154,8 @@ struct DiaryNote: View {
     }
 }
 
-/// The small secondary markers for a selected day — food, cycle, support,
-/// study. Deliberately a short strip that only names what the day actually
+/// The small secondary markers for a selected day — sleep, cycle, support,
+/// mood. Deliberately a short strip that only names what the day actually
 /// has: the month calendar keeps mood color as its one indicator, and this
 /// is where the rest of the day announces itself without turning every
 /// calendar cell into a row of icons.
@@ -174,7 +174,7 @@ struct DayMarkersRow: View {
                         .foregroundStyle(AppTheme.inkSoft)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Capsule(style: .continuous).fill(AppTheme.parchmentCard.opacity(0.9)))
+                        .background(Capsule(style: .continuous).fill(marker == markers.first ? (summary.moodStats.average.map { MoodColorScale.color(for: $0).opacity(0.35) } ?? AppTheme.parchmentCard) : AppTheme.parchmentCard.opacity(0.9)))
                         .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: 1))
                 }
             }
@@ -183,20 +183,29 @@ struct DayMarkersRow: View {
     }
 
     private var markers: [String] {
-        var result: [String] = []
-        if let sleep, !sleep.isEmpty {
-            result.append("🌙 \(DurationFormatting.compact(sleep.totalSleep))")
+        let state = AnalyticsService.dayState(summary: summary, sleep: sleep)
+        var result: [String] = [state.averageMood.map { L("Настроение", "Mood") + " " + String(format: "%.1f", $0) } ?? L("Настроение: нет данных", "Mood: no data")]
+        if let night = state.sleepDuration { result.append("🌙 \(DurationFormatting.compact(night))") }
+        if state.napDuration > 0 { result.append(L("Дневной сон", "Naps") + " " + DurationFormatting.compact(state.napDuration)) }
+        if let quality = state.sleepQuality { result.append(quality.label) }
+        if state.isPeriodDay {
+            result.append(state.cycleDay.map { L("🌸 Менструация — день \($0)", "🌸 Period — day \($0)") } ?? L("🌸 Менструация", "🌸 Period"))
+        } else if let cycleDay = state.cycleDay {
+            result.append(L("День цикла \(cycleDay)", "Cycle day \(cycleDay)"))
         }
-        if summary.food.mealCount > 0 { result.append("🍽 \(summary.food.mealCount)") }
-        if !summary.food.hungerEntries.isEmpty { result.append("🍎 \(summary.food.hungerEntries.count)") }
-        if summary.isPeriodDay {
-            result.append("🌸")
-        } else if let day = summary.cycleDay {
-            result.append("🌸 \(day)")
+        if let support = state.support {
+            result.append("💊 \(support.status.glyph) \(support.status.label)")
+        } else {
+            result.append(L("💊 Не отмечено", "💊 Not recorded"))
         }
-        if let support = summary.support { result.append("💊 \(support.status.glyph)") }
-        if summary.totalActiveDuration > 0 {
-            result.append("📚 \(DurationFormatting.compact(summary.totalActiveDuration))")
+        if !state.emotions.isEmpty {
+            result.append(state.emotions.map(\.emoji).joined(separator: " "))
+        }
+        if state.impulseCount > 0 {
+            result.append("⚡ \(state.impulseCount)")
+        }
+        if state.activeDuration > 0 {
+            result.append("🌿 \(DurationFormatting.compact(state.activeDuration))")
         }
         return result
     }

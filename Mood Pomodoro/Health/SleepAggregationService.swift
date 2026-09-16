@@ -174,7 +174,10 @@ enum SleepAggregationService {
         var kept: [SleepSessionSummary] = []
         var resolved: [String: SleepSessionSummary] = [:]
         for session in ordered {
+            guard resolved[session.id] == nil else { continue }
             var copy = session
+            copy.isSuperseded = false
+            copy.supersededBy = nil
             if let winner = kept.first(where: { $0.start < session.end && $0.end > session.start }) {
                 copy.isSuperseded = true
                 copy.supersededBy = winner.source
@@ -184,7 +187,8 @@ enum SleepAggregationService {
             resolved[copy.id] = copy
         }
         // Back into the caller's order, so nothing else has to re-sort.
-        return sessions.compactMap { resolved[$0.id] }
+        var emitted = Set<String>()
+        return sessions.compactMap { emitted.insert($0.id).inserted ? resolved[$0.id] : nil }
     }
 
     // MARK: - Grouping (rule 4)

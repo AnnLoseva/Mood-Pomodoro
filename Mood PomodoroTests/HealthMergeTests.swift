@@ -142,7 +142,7 @@ struct HealthMergeTests {
     @Test func aDayWhereEverythingWasSkippedReadsAsNotTaken() {
         #expect(medication(5, skipped: 2).status == .notTaken)
         // Mixed days read as taken: one dose really was taken.
-        #expect(medication(5, taken: 1, skipped: 1).status == .taken)
+        #expect(medication(5, taken: 1, skipped: 1).status == .partial)
     }
 
     @Test func monthlySupportStatisticsCountHealthDaysToo() {

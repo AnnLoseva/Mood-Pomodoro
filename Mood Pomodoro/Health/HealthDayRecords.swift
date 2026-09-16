@@ -107,13 +107,10 @@ final class HealthMedicationDay {
 
     /// The day's answer in the app's own vocabulary.
     ///
-    /// A day where anything was taken reads as "принято" even if another
-    /// dose was skipped: the app tracks one daily support mark, and "she
-    /// took something today" is the closest true statement. Days where
-    /// everything was skipped read as "не принято". A day where Health only
-    /// holds untouched reminders says nothing at all and is not stored —
-    /// an ignored notification is not a record of skipping.
+    /// Mixed dose results remain partial, with counts retained in details.
+    /// Untouched reminders are not evidence of skipped medication.
     var status: SupportStatus? {
+        if takenCount > 0 && skippedCount > 0 { return .partial }
         if takenCount > 0 { return .taken }
         if skippedCount > 0 { return .notTaken }
         return nil

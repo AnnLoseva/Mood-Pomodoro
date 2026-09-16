@@ -24,6 +24,7 @@ struct CompareAnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                DayContextComparison()
                 Picker(L("Режим", "Mode"), selection: $mode) {
                     ForEach(Mode.allCases) { Text($0.title).tag($0) }
                 }

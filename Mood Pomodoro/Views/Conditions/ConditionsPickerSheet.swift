@@ -20,7 +20,7 @@ struct ConditionsPickerSheet: View {
     @State private var activeCategory: FactorCategory?
 
     private var categories: [FactorCategory] {
-        allCategories.filter(\.isEnabled)
+        allCategories.filter { $0.isEnabled && !$0.isLegacyEmotionCategory }
     }
 
     var body: some View {

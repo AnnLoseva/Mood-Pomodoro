@@ -65,6 +65,10 @@ struct SessionDetailView: View {
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 6) {
+            SessionTypePicker(selection: Binding(
+                get: { session.sessionType },
+                set: { sessionManager.setSessionType($0, for: session) }
+            ), showsHint: false)
             Text(DateFormatting.fullDate(session.startDate))
                 .font(.lora(15, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)

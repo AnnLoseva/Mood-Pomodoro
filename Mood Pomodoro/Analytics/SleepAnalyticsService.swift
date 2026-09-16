@@ -24,7 +24,7 @@ extension AnalyticsService {
         in interval: DateInterval,
         calendar: Calendar = .current
     ) -> SleepPeriodStatistics? {
-        let inPeriod = sessions.filter { interval.contains($0.day) }
+        let inPeriod = SleepAggregationService.resolveOverlaps(sessions: sessions).filter { !$0.isSuperseded && $0.day >= interval.start && $0.day < interval.end }
         guard !inPeriod.isEmpty else { return nil }
 
         let nights = inPeriod.filter { $0.kind == .night }
@@ -109,7 +109,7 @@ extension AnalyticsService {
         in interval: DateInterval,
         calendar: Calendar = .current
     ) -> [SleepAssociationGroup] {
-        let staged = sessions.filter { $0.kind == .night && $0.hasStageDetail && interval.contains($0.day) }
+        let staged = SleepAggregationService.resolveOverlaps(sessions: sessions).filter { !$0.isSuperseded && $0.kind == .night && $0.hasStageDetail && interval.contains($0.day) }
         guard staged.count >= minimumSampleSize * 2 else { return [] }
         let values = staged.map { $0.duration(of: .deep) }.sorted()
         let median = values[values.count / 2]
@@ -172,7 +172,7 @@ extension AnalyticsService {
         calendar: Calendar
     ) -> [Date: TimeInterval] {
         var totals: [Date: TimeInterval] = [:]
-        for session in sessions where session.kind == .night && interval.contains(session.day) {
+        for session in SleepAggregationService.resolveOverlaps(sessions: sessions) where !session.isSuperseded && session.kind == .night && interval.contains(session.day) {
             totals[calendar.startOfDay(for: session.day), default: 0] += session.totalSleep
         }
         return totals
@@ -198,23 +198,25 @@ extension AnalyticsService {
         let hungers = dayHunger.compactMap(\.hunger)
         let appetites = dayHunger.compactMap(\.appetite)
 
+        let aggregates = dayAggregates(checkIns: dayCheckIns, hungerEntries: dayHunger, calendar: calendar)
+        let figures = describe(days: aggregates, key: key, label: label)
         return SleepAssociationGroup(
             key: key,
             label: label,
             dayCount: days.count,
-            averageMood: averageMood(of: dayCheckIns),
+            averageMood: figures.scales.first { $0.metric == .mood }?.average,
             moodCount: dayCheckIns.count,
-            averageEnergy: averageScale(energies),
+            averageEnergy: figures.scales.first { $0.metric == .energy }?.average,
             energyCount: energies.count,
-            averageMotivation: averageScale(motivations),
+            averageMotivation: figures.scales.first { $0.metric == .motivation }?.average,
             motivationCount: motivations.count,
-            averageHunger: averageScale(hungers),
+            averageHunger: figures.scales.first { $0.metric == .hunger }?.average,
             hungerCount: hungers.count,
-            averageAppetite: averageScale(appetites),
+            averageAppetite: figures.scales.first { $0.metric == .appetite }?.average,
             appetiteCount: appetites.count,
             mealCount: dayFood.count,
             treatCount: dayFood.filter { $0.category == .treat }.count,
-            studyDuration: daySessions.reduce(0) { $0 + $1.activeWorkDuration() }
+            activityDuration: daySessions.reduce(0) { $0 + $1.activeWorkDuration() }
         )
     }
 }
@@ -270,7 +272,7 @@ struct SleepAssociationGroup: Identifiable {
     let appetiteCount: Int
     let mealCount: Int
     let treatCount: Int
-    let studyDuration: TimeInterval
+    let activityDuration: TimeInterval
 
     var hasEnoughData: Bool { dayCount >= AnalyticsService.minimumSampleSize }
 }

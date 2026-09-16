@@ -132,6 +132,26 @@ struct DayMetricsChart: View {
 
     private var hasActivities: Bool { !summary.activitySpans.isEmpty }
 
+    /// One series as its own ChartContent so the type checker can finish.
+    /// Symbols live on the LineMark — PointMark has no `series`, and a
+    /// separate point family used to pull the extra lines onto one path.
+    @ChartContentBuilder
+    private func seriesMarks(for metric: DayMetric) -> some ChartContent {
+        ForEach(summary.points(for: metric)) { point in
+            if let value = point.scale(for: metric) {
+                LineMark(
+                    x: .value("Время", point.timestamp),
+                    y: .value("Уровень", value),
+                    series: .value("Показатель", metric.rawValue)
+                )
+                .foregroundStyle(metric.color)
+                .interpolationMethod(.monotone)
+                .symbol(point.origin == .manual ? BasicChartSymbolShape.diamond : .circle)
+                .symbolSize(point.origin == .manual ? 50 : 36)
+            }
+        }
+    }
+
     private var chart: some View {
         Chart {
             // Activities first, so the lines are drawn over them.
@@ -156,27 +176,10 @@ struct DayMetricsChart: View {
                 .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
             ForEach(enabledMetrics) { metric in
-                ForEach(summary.points(for: metric)) { point in
-                    if let value = point.scale(for: metric) {
-                        LineMark(
-                            x: .value("Время", point.timestamp),
-                            y: .value("Уровень", value),
-                            series: .value("Показатель", metric.rawValue)
-                        )
-                        .foregroundStyle(metric.color)
-                        .interpolationMethod(.monotone)
-                        PointMark(
-                            x: .value("Время", point.timestamp),
-                            y: .value("Уровень", value)
-                        )
-                        .foregroundStyle(metric.color)
-                        // A mood she logged herself vs. one the app asked for.
-                        .symbol(point.origin == .manual ? BasicChartSymbolShape.diamond : .circle)
-                        .symbolSize(point.origin == .manual ? 50 : 36)
-                    }
-                }
+                seriesMarks(for: metric)
             }
         }
+        .chartLegend(.hidden)
         .chartXScale(domain: domain)
         // The space above 5 holds the activity labels.
         .chartYScale(domain: 1...(hasActivities ? 6 : 5))

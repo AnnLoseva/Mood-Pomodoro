@@ -7,6 +7,7 @@ import SwiftUI
 
 struct NewSessionView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @State private var sessionType: SessionType?
     @State private var activity: String = ""
     @State private var intervalMinutes: Int = 10
     @State private var selectedConditions: [FactorCategory: FactorOption] = [:]
@@ -85,6 +86,7 @@ struct NewSessionView: View {
                         #endif
                     }
 
+                    SessionTypePicker(selection: $sessionType, showsHint: false)
                     startTimeSection
 
                     ConditionsSummaryView(
@@ -102,6 +104,7 @@ struct NewSessionView: View {
                         activity: trimmedActivity,
                         intervalMinutes: intervalMinutes,
                         startDate: resolvedStart,
+                        type: sessionType,
                         initialConditions: selectedConditions
                     )
                     startedEarlier = false
@@ -111,7 +114,7 @@ struct NewSessionView: View {
                          : L("Начать сессию", "Start session"))
                 }
                 .buttonStyle(.goblinPrimary)
-                .disabled(trimmedActivity.isEmpty)
+                .disabled(trimmedActivity.isEmpty || sessionType == nil)
                 .opacity(trimmedActivity.isEmpty ? 0.5 : 1)
 
                 // Recording a mood shouldn't require committing to a session.

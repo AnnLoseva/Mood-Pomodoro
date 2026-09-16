@@ -31,6 +31,11 @@ struct AnalyticsView: View {
         }
     }
 
+    @Query private var checkIns: [CheckIn]
+    @Query private var emotions: [EmotionEntry]
+    @Query private var impulses: [ImpulseEntry]
+    @Query private var support: [SupportEntry]
+    @Query private var cycle: [CycleEntry]
     @Query private var allSessions: [FocusSession]
     @Query private var foodEntries: [FoodEntry]
     @Query private var hungerEntries: [HungerEntry]
@@ -39,11 +44,11 @@ struct AnalyticsView: View {
     @State private var showExport = false
 
     private var finishedOrActive: [FocusSession] { allSessions }
-    private var hasAnyCheckIns: Bool { allSessions.contains { !($0.checkIns ?? []).isEmpty } }
+    private var hasAnyCheckIns: Bool { !checkIns.isEmpty }
     /// Food is its own kind of record, so a diary with food but no sessions
     /// still has analytics worth opening.
     private var hasAnyData: Bool {
-        hasAnyCheckIns || !foodEntries.isEmpty || !hungerEntries.isEmpty || !sleepStore.sessions.isEmpty
+        hasAnyCheckIns || !allSessions.isEmpty || !emotions.isEmpty || !impulses.isEmpty || !support.isEmpty || !cycle.isEmpty || !foodEntries.isEmpty || !hungerEntries.isEmpty || !sleepStore.sessions.isEmpty
     }
 
     var body: some View {
@@ -123,7 +128,7 @@ struct AnalyticsView: View {
             Text(L("Пока мало данных", "Not much data yet"))
                 .font(.lora(19, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Text(L("Аналитика появится после нескольких сессий", "Analytics will appear after a few sessions"))
+            Text(L("Аналитика появится, когда появятся записи — сессии, дневник, сон или еда.", "Analytics will appear once there are records — sessions, diary, sleep or food."))
                 .font(.lora(14))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)

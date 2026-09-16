@@ -39,6 +39,11 @@ enum PersistenceController {
     static let cloudKitEnabledInThisBuild = true
 
     static func makeContainer() -> ModelContainer {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["MOOD_UI_TESTING"] == "1" {
+            return seeded(try! ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)))
+        }
+        #endif
         let runningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         // Do not construct a CloudKit container unless explicitly enabled —
         // otherwise CKContainer logs a process-level client bug.
@@ -50,11 +55,7 @@ enum PersistenceController {
         if let local = attempt(cloudKit: false) {
             return seeded(local)
         }
-        destroyPersistentStore()
-        if let local = attempt(cloudKit: false) {
-            return seeded(local)
-        }
-        fatalError("Failed to create ModelContainer after resetting the store")
+        fatalError("Unable to open diary store. Existing data has been preserved; do not reset the database.")
     }
 
     private static func attempt(cloudKit: Bool) -> ModelContainer? {
@@ -79,14 +80,4 @@ enum PersistenceController {
         return container
     }
 
-    private static func destroyPersistentStore() {
-        let fileManager = FileManager.default
-        guard let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return
-        }
-        let contents = (try? fileManager.contentsOfDirectory(at: support, includingPropertiesForKeys: nil)) ?? []
-        for url in contents where url.lastPathComponent.hasPrefix("default.store") {
-            try? fileManager.removeItem(at: url)
-        }
-    }
 }

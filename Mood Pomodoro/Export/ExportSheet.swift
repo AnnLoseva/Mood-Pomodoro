@@ -29,6 +29,7 @@ struct ExportSheet: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(SleepStore.self) private var sleepStore
 
     @Query private var sessions: [FocusSession]
     @Query private var checkIns: [CheckIn]
@@ -38,6 +39,8 @@ struct ExportSheet: View {
     @Query private var conditionEvents: [ConditionEvent]
     @Query private var foodEntries: [FoodEntry]
     @Query private var hungerEntries: [HungerEntry]
+    @Query private var emotionEntries: [EmotionEntry]
+    @Query private var impulseEntries: [ImpulseEntry]
 
     @State private var period: Period = .days30
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -13, to: .now) ?? .now
@@ -62,7 +65,10 @@ struct ExportSheet: View {
             notes: notes,
             conditionEvents: conditionEvents,
             foodEntries: foodEntries,
-            hungerEntries: hungerEntries
+            hungerEntries: hungerEntries,
+            emotionEntries: emotionEntries,
+            impulseEntries: impulseEntries,
+            manualSleep: sleepStore.sessions.filter { $0.source == .manual }
         )
     }
 

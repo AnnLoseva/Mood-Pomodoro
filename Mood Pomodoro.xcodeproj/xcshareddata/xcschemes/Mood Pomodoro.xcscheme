@@ -41,6 +41,9 @@
                ReferencedContainer = "container:Mood Pomodoro.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference skipped = "NO" parallelizable = "NO">
+            <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "88C608D930529F5900B55E85" BuildableName = "Mood PomodoroUITests.xctest" BlueprintName = "Mood PomodoroUITests" ReferencedContainer = "container:Mood Pomodoro.xcodeproj"/>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

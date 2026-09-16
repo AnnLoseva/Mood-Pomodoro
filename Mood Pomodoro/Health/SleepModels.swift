@@ -260,6 +260,10 @@ struct SleepDaySummary: Sendable {
     /// Night plus naps. Counted sessions never overlap each other, so this
     /// is a plain sum rather than another union.
     var totalSleep: TimeInterval { countedSessions.reduce(0) { $0 + $1.totalSleep } }
+    var nightTotal: TimeInterval? {
+        let nights = countedSessions.filter { $0.kind == .night }
+        return nights.isEmpty ? nil : nights.reduce(0) { $0 + $1.totalSleep }
+    }
     var napTotal: TimeInterval { naps.reduce(0) { $0 + $1.totalSleep } }
 
     /// The day's subjective answer: the night's, or — if only naps were

@@ -15,6 +15,7 @@ enum SupportStatus: String, Codable, Sendable, CaseIterable, Identifiable {
     case taken
     case notTaken
     case unknown
+    case partial
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum SupportStatus: String, Codable, Sendable, CaseIterable, Identifiable {
         switch self {
         case .taken: return L("Принято", "Taken")
         case .notTaken: return L("Не принято", "Not taken")
+        case .partial: return L("Принято частично", "Partially taken")
         case .unknown: return L("Не помню", "Don't remember")
         }
     }
@@ -33,6 +35,7 @@ enum SupportStatus: String, Codable, Sendable, CaseIterable, Identifiable {
         case .taken: return "✓"
         case .notTaken: return "✕"
         case .unknown: return "?"
+        case .partial: return "±"
         }
     }
 }

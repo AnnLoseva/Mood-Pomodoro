@@ -278,11 +278,12 @@ final class SleepStore {
     /// Replaces the imported rows in a window with what HealthKit now says.
     /// Manual entries are never touched: they are the user's own data, not a
     /// cache of anyone else's.
-    private func replaceImported(with summaries: [SleepSessionSummary], from: Date, to: Date = .distantFuture) {
+    func replaceImported(with summaries: [SleepSessionSummary], from: Date, to: Date = .distantFuture) {
         let existing = importedRecords().filter { $0.startDate >= from && $0.startDate < to }
         var byKey = Dictionary(existing.map { ($0.deterministicKey, $0) }, uniquingKeysWith: { first, _ in first })
 
-        for summary in summaries {
+        var importedKeys = Set<String>()
+        for summary in summaries where importedKeys.insert(summary.id).inserted {
             if let record = byKey.removeValue(forKey: summary.id) {
                 record.apply(summary)
             } else {
@@ -347,9 +348,11 @@ final class SleepStore {
         if let kind, kind != summary.kind {
             summary = summary.with(kind: kind)
         }
-        let record = SleepRecord(summary: summary, note: note)
+        let record = manualRecord(key: summary.id) ?? SleepRecord(summary: summary, note: note)
+        record.apply(summary)
+        record.note = note
         record.quality = quality
-        context.insert(record)
+        if record.modelContext == nil { context.insert(record) }
         save()
         return summary
     }
@@ -478,7 +481,7 @@ enum LocalHealthStore {
         let configuration = ModelConfiguration(
             "LocalHealth",
             schema: schema,
-            isStoredInMemoryOnly: runningTests,
+            isStoredInMemoryOnly: runningTests || ProcessInfo.processInfo.environment["MOOD_UI_TESTING"] == "1",
             // Explicit, not defaulted: omitting this would mean `.automatic`,
             // which is exactly the mistake this container exists to prevent.
             cloudKitDatabase: .none

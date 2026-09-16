@@ -176,7 +176,14 @@ extension AnalyticsService {
             date: calendar.startOfDay(for: date),
             moodStats: moodStatistics(of: dayCheckIns),
             moodPoints: dayCheckIns.map {
-                TimeOfDayMoodPoint(id: $0.id, timestamp: $0.timestamp, mood: $0.mood, origin: $0.origin)
+                TimeOfDayMoodPoint(
+                    id: $0.id,
+                    timestamp: $0.timestamp,
+                    mood: $0.mood,
+                    energy: $0.energy,
+                    motivation: $0.motivation,
+                    origin: $0.origin
+                )
             },
             activitySpans: activitySpans(of: overlapping, on: date, calendar: calendar),
             timelineEvents: events,
@@ -416,7 +423,9 @@ extension AnalyticsService {
             timestamp: checkIn.timestamp,
             kind: .checkIn,
             title: checkIn.reason.map(Ldata) ?? checkIn.mood.label,
-            subtitle: checkIn.note,
+            subtitle: [checkIn.levelsSummary, checkIn.note]
+                .compactMap { $0 }
+                .joined(separator: " · "),
             mood: checkIn.mood,
             target: .checkIn(checkIn.id)
         )

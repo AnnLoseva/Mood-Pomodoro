@@ -77,8 +77,25 @@ final class DiaryEntryStore {
     // MARK: - Mood
 
     @discardableResult
-    func addMood(_ mood: Mood, reason: String?, note: String?, at timestamp: Date) -> CheckIn {
-        let checkIn = CheckIn(timestamp: timestamp, mood: mood, reason: reason, note: note, origin: .manual)
+    func addMood(
+        _ mood: Mood,
+        energy: EnergyLevel? = nil,
+        motivation: StudyMotivation? = nil,
+        reason: String?,
+        motivationReason: String? = nil,
+        note: String?,
+        at timestamp: Date
+    ) -> CheckIn {
+        let checkIn = CheckIn(
+            timestamp: timestamp,
+            mood: mood,
+            energy: energy,
+            motivation: motivation,
+            reason: reason,
+            motivationReason: motivationReason,
+            note: note,
+            origin: .manual
+        )
         context.insert(checkIn)
         save()
         return checkIn
@@ -87,9 +104,21 @@ final class DiaryEntryStore {
     /// Works for session check-ins too — the user may correct a mood or its
     /// reason. The condition snapshot is left alone: it records what was
     /// true in the session, which moving the mood doesn't change.
-    func updateMood(_ checkIn: CheckIn, mood: Mood, reason: String?, note: String?, at timestamp: Date) {
+    func updateMood(
+        _ checkIn: CheckIn,
+        mood: Mood,
+        energy: EnergyLevel? = nil,
+        motivation: StudyMotivation? = nil,
+        reason: String?,
+        motivationReason: String? = nil,
+        note: String?,
+        at timestamp: Date
+    ) {
         checkIn.mood = mood
+        checkIn.energy = energy
+        checkIn.motivation = motivation
         checkIn.reason = reason
+        checkIn.motivationReason = motivationReason
         checkIn.note = note
         checkIn.timestamp = timestamp
         checkIn.updatedAt = .now

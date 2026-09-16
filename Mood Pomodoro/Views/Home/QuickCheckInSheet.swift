@@ -35,8 +35,8 @@ struct QuickCheckInSheet: View {
 
                 VStack(spacing: 24) {
                     if let mood = selectedMood {
-                        ReasonPickerView(mood: mood) { reason, note in
-                            save(mood: mood, reason: reason, note: note)
+                        ReasonPickerView(mood: mood, showsLevels: existingCheckInID == nil) { answer in
+                            save(mood: mood, answer: answer)
                         }
                     } else {
                         MoodPickerView { mood in
@@ -72,9 +72,9 @@ struct QuickCheckInSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    private func save(mood: Mood, reason: String?, note: String?) {
+    private func save(mood: Mood, answer: CheckInAnswer) {
         if let existingCheckInID {
-            sessionManager.updateReason(reason, for: existingCheckInID)
+            sessionManager.updateReason(answer.reason, for: existingCheckInID)
             dismiss()
             return
         }
@@ -83,9 +83,24 @@ struct QuickCheckInSheet: View {
         // snapshot and check-in scheduling; otherwise the mood is recorded on
         // its own — the same `CheckIn` type either way.
         if let session, session.state == .active {
-            sessionManager.addCheckIn(mood: mood, reason: reason, note: note, to: session)
+            sessionManager.addCheckIn(
+                mood: mood,
+                energy: answer.energy,
+                motivation: answer.motivation,
+                reason: answer.reason,
+                motivationReason: answer.motivationReason,
+                note: answer.note,
+                to: session
+            )
         } else {
-            sessionManager.addStandaloneCheckIn(mood: mood, reason: reason, note: note)
+            sessionManager.addStandaloneCheckIn(
+                mood: mood,
+                energy: answer.energy,
+                motivation: answer.motivation,
+                reason: answer.reason,
+                motivationReason: answer.motivationReason,
+                note: answer.note
+            )
         }
         dismiss()
     }
@@ -123,16 +138,54 @@ private struct MoodPickerView: View {
     }
 }
 
+/// Everything the second step can collect. Only the mood, picked in the
+/// first step, is required — every field here may stay nil.
+private struct CheckInAnswer {
+    var reason: String?
+    var note: String?
+    var energy: EnergyLevel?
+    var motivation: StudyMotivation?
+    var motivationReason: String?
+}
+
 private struct ReasonPickerView: View {
     @Environment(ReasonsStore.self) private var reasonsStore
     let mood: Mood
-    let onSelect: (String?, String?) -> Void
+    /// Off when the sheet was opened to fill in the reason on a check-in
+    /// that already exists — that flow only edits the reason.
+    let showsLevels: Bool
+    let onSelect: (CheckInAnswer) -> Void
 
     @State private var note: String = ""
+    @State private var energy: EnergyLevel?
+    @State private var motivation: StudyMotivation?
+    @State private var motivationReason: String?
 
     private var trimmedNote: String? {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// A different level means a different list; an answer from the
+    /// previous one would be attached to a question no longer on screen.
+    private var motivationBinding: Binding<StudyMotivation?> {
+        Binding(
+            get: { motivation },
+            set: { newValue in
+                if newValue != motivation { motivationReason = nil }
+                motivation = newValue
+            }
+        )
+    }
+
+    private func answer(reason: String?) -> CheckInAnswer {
+        CheckInAnswer(
+            reason: reason,
+            note: trimmedNote,
+            energy: energy,
+            motivation: motivation,
+            motivationReason: motivationReason
+        )
     }
 
     var body: some View {
@@ -142,7 +195,7 @@ private struct ReasonPickerView: View {
                 VStack(spacing: 10) {
                     ForEach(reasonsStore.reasons(for: mood), id: \.self) { reason in
                         Button {
-                            onSelect(reason, trimmedNote)
+                            onSelect(answer(reason: reason))
                         } label: {
                             Text(Ldata(reason))
                                 .font(.lora(16))
@@ -159,6 +212,26 @@ private struct ReasonPickerView: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                    }
+                }
+
+                if showsLevels {
+                    VStack(alignment: .leading, spacing: 14) {
+                        levelSection(L("🔋 Сколько сил", "🔋 Energy left")) {
+                            LevelPickerRow(selection: $energy, size: 36)
+                        }
+                        levelSection(L("🔥 Мотивация к текущему занятию", "🔥 Motivation for what I'm doing")) {
+                            LevelPickerRow(selection: motivationBinding, size: 36)
+                            if let motivation {
+                                FlowLayout(spacing: 8) {
+                                    ForEach(reasonsStore.reasons(for: motivation), id: \.self) { item in
+                                        DiaryChip(title: Ldata(item), isSelected: motivationReason == item) {
+                                            motivationReason = motivationReason == item ? nil : item
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -179,7 +252,7 @@ private struct ReasonPickerView: View {
                     )
 
                 Button(L("Пропустить", "Skip")) {
-                    onSelect(nil, trimmedNote)
+                    onSelect(answer(reason: nil))
                 }
                 .font(.lora(14))
                 .foregroundStyle(AppTheme.inkSoft)
@@ -187,5 +260,18 @@ private struct ReasonPickerView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func levelSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.inkSoft)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -120,7 +120,7 @@ final class SessionManager {
         activeSession = session
         revision += 1
         guard !Self.isRunningTests else { return }
-        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.reasons)
+        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)
         Task {
             await NotificationScheduler.scheduleUpcoming(
                 for: session,
@@ -257,7 +257,10 @@ final class SessionManager {
 
     func addCheckIn(
         mood: Mood,
+        energy: EnergyLevel? = nil,
+        motivation: StudyMotivation? = nil,
         reason: String? = nil,
+        motivationReason: String? = nil,
         note: String? = nil,
         to session: FocusSession? = nil,
         sourceIdentifier: String? = nil,
@@ -279,7 +282,10 @@ final class SessionManager {
         let checkIn = CheckIn(
             timestamp: timestamp,
             mood: mood,
+            energy: energy,
+            motivation: motivation,
             reason: reason,
+            motivationReason: motivationReason,
             note: note,
             conditionSnapshot: target.activeConditions(asOf: timestamp),
             sourceIdentifier: sourceIdentifier,
@@ -315,14 +321,20 @@ final class SessionManager {
     @discardableResult
     func addStandaloneCheckIn(
         mood: Mood,
+        energy: EnergyLevel? = nil,
+        motivation: StudyMotivation? = nil,
         reason: String? = nil,
+        motivationReason: String? = nil,
         note: String? = nil,
         at timestamp: Date = .now
     ) -> CheckIn {
         let checkIn = CheckIn(
             timestamp: timestamp,
             mood: mood,
+            energy: energy,
+            motivation: motivation,
             reason: reason,
+            motivationReason: motivationReason,
             note: note,
             origin: .manual
         )

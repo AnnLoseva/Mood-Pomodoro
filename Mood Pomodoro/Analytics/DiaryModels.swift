@@ -28,13 +28,27 @@ struct MoodStatistics {
     var isEmpty: Bool { checkInCount == 0 }
 }
 
-/// One check-in placed on a day's clock — the intra-day mood chart's point.
+/// One check-in placed on a day's clock — a point of the intra-day chart.
+/// Carries all three scales, since they are recorded together; `energy` and
+/// `motivation` are nil on a check-in where only a mood was noted, and
+/// those points are simply absent from their series rather than guessed at.
 struct TimeOfDayMoodPoint: Identifiable {
     let id: UUID
     let timestamp: Date
     let mood: Mood
+    let energy: EnergyLevel?
+    let motivation: StudyMotivation?
     /// Distinguishes a session ping from a mood the user logged herself.
     let origin: CheckInOrigin
+
+    /// This point's value for one series, or nil when it wasn't recorded.
+    func scale(for metric: DayMetric) -> Double? {
+        switch metric {
+        case .mood: return mood.scale
+        case .energy: return energy?.scale
+        case .motivation: return motivation?.scale
+        }
+    }
 }
 
 /// One session drawn behind the day's mood chart: when it ran and what it
@@ -145,6 +159,25 @@ struct DailySummary {
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var totalBreakDuration: TimeInterval { activities.reduce(0) { $0 + $1.breakDuration } }
     var sessionCount: Int { activities.reduce(0) { $0 + $1.sessionCount } }
+
+    /// The day's points for one series, oldest first. A metric nobody
+    /// recorded today comes back empty — which is how the day chart knows
+    /// to offer its toggle as unavailable rather than as an empty line.
+    func points(for metric: DayMetric) -> [TimeOfDayMoodPoint] {
+        moodPoints.filter { $0.scale(for: metric) != nil }
+    }
+
+    /// Mean of what was recorded for one series, nil when nothing was.
+    func average(for metric: DayMetric) -> Double? {
+        let values = moodPoints.compactMap { $0.scale(for: metric) }
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    /// The series that have anything to draw today, in legend order.
+    var recordedMetrics: [DayMetric] {
+        DayMetric.allCases.filter { !points(for: $0).isEmpty }
+    }
     var isEmpty: Bool {
         moodStats.isEmpty && activities.isEmpty && conditions.isEmpty && notes.isEmpty && support == nil
     }

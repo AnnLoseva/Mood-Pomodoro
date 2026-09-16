@@ -291,6 +291,13 @@ private struct ExportBuilder {
             var text = "\(mood.emoji) \(mood.label) (\(Int(mood.scale))/5)"
             if case .checkIn(let id)? = event.target, let checkIn = checkInsByID[id] {
                 if let reason = checkIn.reason { text += " — \(Ldata(reason))" }
+                if let energy = checkIn.energy {
+                    text += " · " + L("силы", "energy") + ": \(energy.emoji) \(energy.label)"
+                }
+                if let motivation = checkIn.motivation {
+                    text += " · " + L("мотивация", "motivation") + ": \(motivation.emoji) \(motivation.label)"
+                    if let why = checkIn.motivationReason { text += " (\(Ldata(why)))" }
+                }
                 if options.includeNotes, let note = checkIn.note, !note.isEmpty { text += " — “\(note)”" }
                 if checkIn.createdAt.timeIntervalSince(checkIn.timestamp) > 30 * 60 {
                     let written = "\(DateFormatting.compactDate(checkIn.createdAt)) \(DateFormatting.time(checkIn.createdAt))"
@@ -368,6 +375,11 @@ private struct ExportBuilder {
                     mood: Int(checkIn.mood.scale),
                     moodLabel: checkIn.mood.label,
                     reason: checkIn.reason.map(Ldata),
+                    energy: checkIn.energy.map { Int($0.scale) },
+                    energyLabel: checkIn.energy?.label,
+                    motivation: checkIn.motivation.map { Int($0.scale) },
+                    motivationLabel: checkIn.motivation?.label,
+                    motivationReason: checkIn.motivationReason.map(Ldata),
                     note: options.includeNotes ? checkIn.note : nil,
                     source: checkIn.origin == .scheduled ? "timer-prompt" : "manual",
                     activity: checkIn.session.map { Ldata($0.activity) },
@@ -440,6 +452,13 @@ private struct JSONExport: Encodable {
         let mood: Int
         let moodLabel: String
         let reason: String?
+        /// Nil where that scale wasn't answered — "не отмечено" is not the
+        /// middle of the scale, and the export must not imply it was.
+        let energy: Int?
+        let energyLabel: String?
+        let motivation: Int?
+        let motivationLabel: String?
+        let motivationReason: String?
         let note: String?
         let source: String
         let activity: String?

@@ -649,6 +649,98 @@ struct Mood_PomodoroTests {
         let sessionsForCleaning = sessions.filter { canonicalData($0.activity) == canonicalData("cleaning") }
         #expect(sessionsForCleaning.count == 2)
     }
+
+    // MARK: - Energy and motivation alongside mood
+
+    @Test func everyLevelOfEveryScaleHasItsOwnStepIconAndName() {
+        #expect(Mood.orderedCases.map(\.scale) == [5, 4, 3, 2, 1])
+        #expect(EnergyLevel.orderedCases.map(\.scale) == [5, 4, 3, 2, 1])
+        #expect(StudyMotivation.orderedCases.map(\.scale) == [5, 4, 3, 2, 1])
+        let icons = Mood.orderedCases.map(\.imageName)
+            + EnergyLevel.orderedCases.map(\.imageName)
+            + StudyMotivation.orderedCases.map(\.imageName)
+        #expect(Set(icons).count == icons.count)
+    }
+
+    @Test func aCheckInCanCarryAllThreeOrJustAMood() {
+        let both = CheckIn(mood: .good, energy: .low, motivation: .veryHigh)
+        #expect(both.energy == .low)
+        #expect(both.motivation == .veryHigh)
+
+        let moodOnly = CheckIn(mood: .good)
+        #expect(moodOnly.energy == nil)
+        #expect(moodOnly.motivation == nil)
+    }
+
+    @Test func aSeriesOnlyCountsThePointsThatRecordedIt() {
+        let start = Date(timeIntervalSince1970: 0)
+        let summary = makeDaySummary(checkIns: [
+            CheckIn(timestamp: start, mood: .good, energy: .high),
+            CheckIn(timestamp: start.addingTimeInterval(3600), mood: .tired, energy: .low, motivation: .low),
+            CheckIn(timestamp: start.addingTimeInterval(7200), mood: .neutral)
+        ])
+        #expect(summary.points(for: .mood).count == 3)
+        #expect(summary.points(for: .energy).count == 2)
+        #expect(summary.points(for: .motivation).count == 1)
+        // Averaged over what was recorded, never over the gaps.
+        #expect(summary.average(for: .energy)?.isApproximately(3) == true)
+        #expect(summary.average(for: .motivation)?.isApproximately(2) == true)
+    }
+
+    @Test func aScaleNobodyRecordedIsNotOfferedAsASeries() {
+        let start = Date(timeIntervalSince1970: 0)
+        let summary = makeDaySummary(checkIns: [
+            CheckIn(timestamp: start, mood: .good),
+            CheckIn(timestamp: start.addingTimeInterval(3600), mood: .neutral)
+        ])
+        #expect(summary.recordedMetrics == [.mood])
+        #expect(summary.average(for: .energy) == nil)
+    }
+
+    @Test func moodAndMotivationReasonsAreSeparateListsAndSeparateAnswers() {
+        // The old list mixed them; nothing about the work may appear as a
+        // reason for a mood any more.
+        let moodReasons = Set(Mood.allCases.flatMap(\.defaultReasons))
+        let motivationReasons = Set(StudyMotivation.allCases.flatMap(\.defaultReasons))
+        #expect(moodReasons.isDisjoint(with: motivationReasons))
+
+        let checkIn = CheckIn(
+            mood: .tired,
+            motivation: .low,
+            reason: "Грустно",
+            motivationReason: "Материал скучный"
+        )
+        #expect(checkIn.reason == "Грустно")
+        #expect(checkIn.motivationReason == "Материал скучный")
+    }
+
+    @Test func everyBuiltInReasonHasAnEnglishName() {
+        for reason in Mood.allCases.flatMap(\.defaultReasons) {
+            #expect(SeedTranslations.english[reason] != nil, "no English for mood reason \(reason)")
+        }
+        for reason in StudyMotivation.allCases.flatMap(\.defaultReasons) {
+            #expect(SeedTranslations.english[reason] != nil, "no English for motivation reason \(reason)")
+        }
+    }
+
+    @Test func anUnansweredScaleIsExportedAsAbsentRatherThanAsTheMiddle() throws {
+        let checkIn = CheckIn(mood: .good, energy: .low)
+        #expect(checkIn.energy.map { Int($0.scale) } == 2)
+        // Not answered, so nothing to export — never a default of 3.
+        #expect(checkIn.motivation == nil)
+        #expect(checkIn.motivationReason == nil)
+    }
+
+    /// A `DailySummary` built straight from check-ins, with no sessions —
+    /// enough to exercise the per-series accessors the day chart reads.
+    private func makeDaySummary(checkIns: [CheckIn]) -> DailySummary {
+        AnalyticsService.dailySummary(
+            date: Date(timeIntervalSince1970: 0),
+            sessions: [],
+            checkIns: checkIns,
+            calendar: Calendar(identifier: .gregorian)
+        )
+    }
 }
 
 private extension Double {

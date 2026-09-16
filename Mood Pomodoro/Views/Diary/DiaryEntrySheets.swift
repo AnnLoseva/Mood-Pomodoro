@@ -196,7 +196,10 @@ struct MoodEntrySheet: View {
 
     @State private var moment: Date
     @State private var mood: Mood?
+    @State private var energy: EnergyLevel?
+    @State private var motivation: StudyMotivation?
     @State private var reason: String?
+    @State private var motivationReason: String?
     @State private var note = ""
     @State private var loaded = false
 
@@ -209,6 +212,29 @@ struct MoodEntrySheet: View {
         guard let mood else { return [] }
         var list = reasonsStore.reasons(for: mood)
         if let reason, !list.contains(reason) { list.insert(reason, at: 0) }
+        return list
+    }
+
+    /// Picking a different level means a different list of reasons, so the
+    /// old answer is dropped. Done here rather than in `onChange` so that
+    /// loading an existing record — which also sets `motivation` — doesn't
+    /// wipe the reason it just read.
+    private var motivationBinding: Binding<StudyMotivation?> {
+        Binding(
+            get: { motivation },
+            set: { newValue in
+                if newValue != motivation { motivationReason = nil }
+                motivation = newValue
+            }
+        )
+    }
+
+    /// Same rule as `reasons`: an answer already on the record stays
+    /// offered even after the built-in list changed under it.
+    private var motivationReasons: [String] {
+        guard let motivation else { return [] }
+        var list = reasonsStore.reasons(for: motivation)
+        if let motivationReason, !list.contains(motivationReason) { list.insert(motivationReason, at: 0) }
         return list
     }
 
@@ -261,6 +287,21 @@ struct MoodEntrySheet: View {
                     }
                 }
             }
+            DiaryFormSection(L("🔋 Сколько сил", "🔋 Energy left")) {
+                LevelPickerRow(selection: $energy)
+            }
+            DiaryFormSection(L("🔥 Мотивация к занятию", "🔥 Motivation for the activity")) {
+                LevelPickerRow(selection: motivationBinding)
+                if motivation != nil {
+                    FlowLayout(spacing: 8) {
+                        ForEach(motivationReasons, id: \.self) { item in
+                            DiaryChip(title: Ldata(item), isSelected: motivationReason == item) {
+                                motivationReason = motivationReason == item ? nil : item
+                            }
+                        }
+                    }
+                }
+            }
             DiaryFormSection(L("Заметка", "Note")) {
                 TextField(L("Необязательно", "Optional"), text: $note, axis: .vertical)
                     .font(.lora(15))
@@ -276,7 +317,10 @@ struct MoodEntrySheet: View {
         guard let editingID, let checkIn = store.checkIn(id: editingID) else { return }
         moment = checkIn.timestamp
         mood = checkIn.mood
+        energy = checkIn.energy
+        motivation = checkIn.motivation
         reason = checkIn.reason
+        motivationReason = checkIn.motivationReason
         note = checkIn.note ?? ""
     }
 
@@ -284,9 +328,26 @@ struct MoodEntrySheet: View {
         guard let mood else { return }
         let text = DiaryDefaults.trimmed(note)
         if let editingID, let checkIn = store.checkIn(id: editingID) {
-            store.updateMood(checkIn, mood: mood, reason: reason, note: text, at: moment)
+            store.updateMood(
+                checkIn,
+                mood: mood,
+                energy: energy,
+                motivation: motivation,
+                reason: reason,
+                motivationReason: motivationReason,
+                note: text,
+                at: moment
+            )
         } else {
-            store.addMood(mood, reason: reason, note: text, at: moment)
+            store.addMood(
+                mood,
+                energy: energy,
+                motivation: motivation,
+                reason: reason,
+                motivationReason: motivationReason,
+                note: text,
+                at: moment
+            )
         }
     }
 

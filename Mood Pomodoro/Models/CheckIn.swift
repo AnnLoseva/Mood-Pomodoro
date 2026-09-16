@@ -16,7 +16,18 @@ final class CheckIn {
     var id: UUID = UUID()
     var timestamp: Date = Date.now
     var moodRaw: String = Mood.neutral.rawValue
+    /// Energy and motivation at the same moment, both optional: a mood can
+    /// always be logged on its own, and every check-in recorded before
+    /// these existed simply has none. Optional (rather than defaulted) is
+    /// also what keeps this a lightweight CloudKit migration — "не
+    /// отмечено" has to stay a different answer from "средне".
+    var energyRaw: String?
+    var motivationRaw: String?
+    /// Why the mood is what it is. Emotional only — why she does or doesn't
+    /// want to carry on is `motivationReason`, a separate answer to a
+    /// separate question.
     var reason: String?
+    var motivationReason: String?
     var note: String?
     var session: FocusSession?
     /// Stored as `Data` rather than `[ConditionSnapshotEntry]` directly —
@@ -57,7 +68,10 @@ final class CheckIn {
         id: UUID = UUID(),
         timestamp: Date = .now,
         mood: Mood,
+        energy: EnergyLevel? = nil,
+        motivation: StudyMotivation? = nil,
         reason: String? = nil,
+        motivationReason: String? = nil,
         note: String? = nil,
         conditionSnapshot: [ConditionSnapshotEntry] = [],
         sourceIdentifier: String? = nil,
@@ -68,7 +82,10 @@ final class CheckIn {
         self.id = id
         self.timestamp = timestamp
         self.moodRaw = mood.rawValue
+        self.energyRaw = energy?.rawValue
+        self.motivationRaw = motivation?.rawValue
         self.reason = reason
+        self.motivationReason = motivationReason
         self.note = note
         self.conditionSnapshot = conditionSnapshot
         self.sourceIdentifier = sourceIdentifier
@@ -87,5 +104,29 @@ final class CheckIn {
     var mood: Mood {
         get { Mood(rawValue: moodRaw) ?? .neutral }
         set { moodRaw = newValue.rawValue }
+    }
+
+    var energy: EnergyLevel? {
+        get { energyRaw.flatMap(EnergyLevel.init(rawValue:)) }
+        set { energyRaw = newValue?.rawValue }
+    }
+
+    var motivation: StudyMotivation? {
+        get { motivationRaw.flatMap(StudyMotivation.init(rawValue:)) }
+        set { motivationRaw = newValue?.rawValue }
+    }
+
+    /// One line naming whichever of the other two scales was answered, for
+    /// a timeline row — empty when only a mood was recorded, so nothing is
+    /// said about a question that wasn't asked.
+    var levelsSummary: String? {
+        var parts: [String] = []
+        if let energy { parts.append("\(energy.emoji) \(energy.label)") }
+        if let motivation {
+            var text = "\(motivation.emoji) \(motivation.label)"
+            if let motivationReason { text += " — \(Ldata(motivationReason))" }
+            parts.append(text)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

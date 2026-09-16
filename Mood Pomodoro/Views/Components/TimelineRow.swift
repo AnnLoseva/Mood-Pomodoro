@@ -64,7 +64,7 @@ extension FocusSession {
                     timestamp: checkIn.timestamp,
                     kind: .checkIn,
                     title: checkIn.reason.map(Ldata) ?? checkIn.mood.label,
-                    subtitle: nil,
+                    subtitle: checkIn.levelsSummary,
                     mood: checkIn.mood
                 )
             )

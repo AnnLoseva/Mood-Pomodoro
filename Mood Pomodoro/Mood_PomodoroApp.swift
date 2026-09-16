@@ -38,7 +38,7 @@ struct Mood_PomodoroApp: App {
         NotificationDelegate.shared.modelContainer = container
         SessionIntentRuntime.bind(manager)
         ReasonsStore.shared.bind(context: ModelContext(container))
-        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.reasons)
+        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)
     }
 
     var body: some Scene {
@@ -51,7 +51,7 @@ struct Mood_PomodoroApp: App {
                 .environment(\.locale, language.locale)
                 .onChange(of: languageRaw) { _, _ in
                     // Notification buttons are registered with iOS as text.
-                    NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.reasons)
+                    NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)
                 }
                 .environment(sessionManager)
                 .environment(reasonsStore)

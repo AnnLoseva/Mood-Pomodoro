@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
-        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.reasons)
+        NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)
         return true
     }
 }

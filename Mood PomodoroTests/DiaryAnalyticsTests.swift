@@ -596,7 +596,7 @@ struct DiaryAnalyticsTests {
         let records = try #require(object["checkIns"] as? [[String: Any]])
         #expect(records.count == 1)
         #expect(records.first?["mood"] as? Int == 2)
-        #expect(records.first?["moodLabel"] as? String == "A bit hard")
+        #expect(records.first?["moodLabel"] as? String == "Bad")
         #expect(records.first?["time"] as? String == "2024-09-08T22:30:00Z")
         #expect(records.first?["recordedAt"] as? String != records.first?["time"] as? String)
     }

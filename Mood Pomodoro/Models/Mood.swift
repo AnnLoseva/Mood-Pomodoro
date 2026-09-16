@@ -5,7 +5,9 @@
 
 import Foundation
 
-/// The five subjective states a check-in can record.
+/// The five subjective states a check-in can record. One of the three
+/// `LevelScale`s the day chart draws, alongside `EnergyLevel` and
+/// `StudyMotivation` — and the only one the month screen shows.
 enum Mood: String, CaseIterable, Codable, Identifiable {
     case veryGood
     case good
@@ -88,55 +90,64 @@ enum Mood: String, CaseIterable, Codable, Identifiable {
         case .veryGood: return L("Очень хорошо", "Very good")
         case .good: return L("Хорошо", "Good")
         case .neutral: return L("Нормально", "Okay")
-        case .tired: return L("Тяжеловато", "A bit hard")
+        case .tired: return L("Плохо", "Bad")
         case .veryBad: return L("Очень плохо", "Very bad")
         }
     }
 
     /// Seed values for `ReasonsStore`. Kept here only as defaults — the store owns
     /// the editable copy so a future "edit reasons" screen doesn't touch this enum.
+    ///
+    /// Strictly *emotional* — how she feels, not how the work is going.
+    /// Anything about the work itself ("интересная тема", "я вошла в
+    /// поток") belongs to `StudyMotivation.defaultReasons`; the earlier
+    /// list here mixed the two, which is why the same answer could be
+    /// given for a good mood and for wanting to continue.
     var defaultReasons: [String] {
         switch self {
         case .veryGood:
             return [
-                "Интересная тема",
-                "Я вошла в поток",
-                "Всё легко получается",
-                "Сложно, но мне нравится",
-                "Просто хорошо себя чувствую"
+                "Просто очень хорошо",
+                "Что-то порадовало",
+                "Спокойно и приятно",
+                "Чувствую воодушевление",
+                "Всё сейчас нравится"
             ]
         case .good:
             return [
-                "Интересно",
-                "Хорошо получается",
-                "Нравится процесс",
-                "Получается лучше, чем ожидала",
-                "Просто хорошее состояние"
+                "Просто хорошее настроение",
+                "Приятно и спокойно",
+                "Что-то подняло настроение",
+                "Чувствую себя комфортно",
+                "Сейчас всё ок"
             ]
         case .neutral:
             return [
-                "Нормально",
-                "Не особо интересно, но терпимо",
-                "Не сложно",
-                "Не легко",
-                "Просто нейтрально"
+                "Просто нейтрально",
+                "Спокойно",
+                "Ничего особенного",
+                "Немного хорошо, немного тяжело",
+                "Просто нормально"
             ]
         case .tired:
             return [
-                "Устала",
-                "Уже начинает надоедать",
-                "Сложно",
-                "Понимаю, но не хочется продолжать",
-                "Хочу закончить"
+                "Что-то расстроило",
+                "Тревожно",
+                "Раздражена",
+                "Грустно",
+                "Сейчас эмоционально тяжело"
             ]
         case .veryBad:
             return [
-                "Я достаточно устала и хочу спать",
-                "Меня уже тошнит от этого",
-                "Мне не интересно, но я продолжаю сидеть",
-                "Зачем я вообще этим занимаюсь?",
-                "Я вообще ничего не понимаю / слишком сложно"
+                "Очень грустно",
+                "Сильно тревожно",
+                "Очень раздражена",
+                "Что-то сильно задело",
+                "Сейчас совсем тяжело"
             ]
         }
     }
 }
+
+/// Every requirement is already here; this just names the shared shape.
+extension Mood: LevelScale {}

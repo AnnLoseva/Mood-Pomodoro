@@ -26,13 +26,14 @@ enum DayMetric: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Kept apart in hue, not just in lightness, so the three lines stay
-    /// tellable apart over the tinted activity bands behind them.
+    /// Green, yellow, red — traffic-light hues, kept muted enough to sit in
+    /// the parchment palette but far enough apart to stay tellable apart
+    /// over the tinted activity bands behind them.
     var color: Color {
         switch self {
         case .mood: return AppTheme.forest
-        case .energy: return Color(red: 0.831, green: 0.596, blue: 0.180)
-        case .motivation: return Color(red: 0.278, green: 0.435, blue: 0.478)
+        case .energy: return Color(red: 0.882, green: 0.694, blue: 0.129)
+        case .motivation: return Color(red: 0.749, green: 0.239, blue: 0.204)
         }
     }
 

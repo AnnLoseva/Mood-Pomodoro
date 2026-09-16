@@ -731,6 +731,59 @@ struct Mood_PomodoroTests {
         #expect(checkIn.motivationReason == nil)
     }
 
+    // MARK: - Starting a session that is already under way
+
+    @Test @MainActor func aSessionStartedAnHourLateCountsFromWhenItActuallyBegan() throws {
+        let container = try makeTestContainer()
+        let manager = SessionManager(container: container)
+        let begun = Date.now.addingTimeInterval(-58 * 60)
+
+        manager.startSession(activity: "Программирование", intervalMinutes: 10, startDate: begun)
+
+        let session = try #require(manager.activeSession)
+        #expect(session.state == SessionState.active)
+        #expect(abs(session.startDate.timeIntervalSince(begun)) < 1)
+        // The work segment covers the whole hour, not just the last moment.
+        #expect(session.activeWorkDuration().isApproximately(58 * 60, tolerance: 2))
+        // Recorded now, even though it began earlier.
+        #expect(session.createdAt > begun.addingTimeInterval(60))
+    }
+
+    @Test @MainActor func aStartInTheFutureIsPulledBackToNow() throws {
+        let container = try makeTestContainer()
+        let manager = SessionManager(container: container)
+
+        manager.startSession(activity: "Чтение", intervalMinutes: 10, startDate: .now.addingTimeInterval(3600))
+
+        let session = try #require(manager.activeSession)
+        #expect(session.startDate <= Date.now)
+        #expect(session.activeWorkDuration() >= 0)
+    }
+
+    @Test @MainActor func conditionsPickedForABackdatedSessionAreStampedAtItsStart() throws {
+        let container = try makeTestContainer()
+        let context = container.mainContext
+        let category = FactorCategory(name: "Напиток", icon: "☕️")
+        let option = FactorOption(name: "Кофе", icon: "☕️")
+        option.category = category
+        category.options = [option]
+        context.insert(category)
+        try context.save()
+        let manager = SessionManager(container: container)
+        let begun = Date.now.addingTimeInterval(-45 * 60)
+
+        manager.startSession(
+            activity: "Математика",
+            intervalMinutes: 10,
+            startDate: begun,
+            initialConditions: [category: option]
+        )
+
+        let session = try #require(manager.activeSession)
+        let event = try #require(session.sortedConditionEvents.first)
+        #expect(abs(event.timestamp.timeIntervalSince(begun)) < 1)
+    }
+
     /// A `DailySummary` built straight from check-ins, with no sessions —
     /// enough to exercise the per-series accessors the day chart reads.
     private func makeDaySummary(checkIns: [CheckIn]) -> DailySummary {

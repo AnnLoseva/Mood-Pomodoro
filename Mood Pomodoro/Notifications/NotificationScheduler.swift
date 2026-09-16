@@ -129,8 +129,16 @@ enum NotificationScheduler {
         guard interval > 0 else { return }
 
         let center = UNUserNotificationCenter.current()
+        // A session can be started behind the clock — "I've been at this an
+        // hour already" — so the first checkpoints are in the past. Skip to
+        // the first one still ahead instead of spending the batch's slots
+        // on ones that can only be dropped.
         var checkpoint = fromCheckpoint
-        let limit = fromCheckpoint + maxScheduledPerBatch
+        let elapsed = Date.now.timeIntervalSince(referenceStart)
+        if elapsed > 0 {
+            checkpoint = max(checkpoint, Int(elapsed / interval) + 1)
+        }
+        let limit = checkpoint + maxScheduledPerBatch
         while checkpoint < limit {
             defer { checkpoint += 1 }
             let fireDate = referenceStart.addingTimeInterval(interval * Double(checkpoint))

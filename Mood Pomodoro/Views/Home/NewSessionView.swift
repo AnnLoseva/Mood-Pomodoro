@@ -12,7 +12,16 @@ struct NewSessionView: View {
     @State private var selectedConditions: [FactorCategory: FactorOption] = [:]
     @State private var showConditionsPicker = false
     @State private var showQuickCheckIn = false
+    /// Off by default: almost every session starts when the button is
+    /// pressed, and the picker shouldn't be in the way of the common case.
+    @State private var startedEarlier = false
+    @State private var startMoment: Date = .now
     @FocusState private var activityFieldFocused: Bool
+
+    /// How far back a still-running session may be backdated. Long enough
+    /// for a morning that went unrecorded, short enough that a mis-set
+    /// picker can't invent a session from yesterday.
+    private static let longestBackdate: TimeInterval = 12 * 60 * 60
 
     #if DEBUG
     private let intervalOptions = [1, 5, 10, 15, 20, 30]
@@ -76,6 +85,8 @@ struct NewSessionView: View {
                         #endif
                     }
 
+                    startTimeSection
+
                     ConditionsSummaryView(
                         title: L("Условия", "Conditions"),
                         chips: selectedConditions.map { ConditionChip(category: $0.key, option: $0.value) }
@@ -90,10 +101,14 @@ struct NewSessionView: View {
                     sessionManager.startSession(
                         activity: trimmedActivity,
                         intervalMinutes: intervalMinutes,
+                        startDate: resolvedStart,
                         initialConditions: selectedConditions
                     )
+                    startedEarlier = false
                 } label: {
-                    Text(L("Начать сессию", "Start session"))
+                    Text(startedEarlier
+                         ? L("Начать сессию с \(DateFormatting.time(resolvedStart))", "Start session from \(DateFormatting.time(resolvedStart))")
+                         : L("Начать сессию", "Start session"))
                 }
                 .buttonStyle(.goblinPrimary)
                 .disabled(trimmedActivity.isEmpty)
@@ -126,6 +141,74 @@ struct NewSessionView: View {
 
     private var trimmedActivity: String {
         activity.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - When it started
+
+    /// For a session already under way: the work began earlier, so the
+    /// elapsed time, the check-in schedule and the day chart all have to
+    /// count from then rather than from the moment the button is pressed.
+    private var startTimeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("Когда началось?", "When did it start?"))
+                .font(.lora(14, weight: .medium))
+                .foregroundStyle(AppTheme.inkSoft)
+            HStack(spacing: 8) {
+                startChoice(L("Сейчас", "Now"), isSelected: !startedEarlier) {
+                    startedEarlier = false
+                }
+                startChoice(L("Уже идёт", "Already going"), isSelected: startedEarlier) {
+                    // Somewhere useful to start from, rather than "now",
+                    // which would mean the same as the other choice.
+                    if !startedEarlier { startMoment = .now.addingTimeInterval(-30 * 60) }
+                    startedEarlier = true
+                    activityFieldFocused = false
+                }
+            }
+            if startedEarlier {
+                DatePicker(
+                    L("Начало", "Start"),
+                    selection: $startMoment,
+                    in: Date.now.addingTimeInterval(-Self.longestBackdate)...Date.now,
+                    displayedComponents: [.hourAndMinute]
+                )
+                .datePickerStyle(.compact)
+                .font(.lora(15))
+                .tint(AppTheme.forest)
+                Text(L("Идёт уже \(DurationFormatting.compact(elapsedSoFar))", "Going for \(DurationFormatting.compact(elapsedSoFar)) already"))
+                    .font(.lora(12))
+                    .foregroundStyle(AppTheme.inkSoft)
+            }
+        }
+    }
+
+    private var resolvedStart: Date {
+        guard startedEarlier else { return .now }
+        return min(max(startMoment, .now.addingTimeInterval(-Self.longestBackdate)), .now)
+    }
+
+    private var elapsedSoFar: TimeInterval {
+        Date.now.timeIntervalSince(resolvedStart)
+    }
+
+    private func startChoice(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.lora(14, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
+                .lineLimit(1)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(AppTheme.border, lineWidth: isSelected ? 0 : 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

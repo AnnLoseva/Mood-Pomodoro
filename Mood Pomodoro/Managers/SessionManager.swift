@@ -93,19 +93,30 @@ final class SessionManager {
         }
     }
 
+    /// - Parameter startDate: when the work actually began, which may be
+    ///   earlier than now — a session remembered part-way through, still
+    ///   running. Everything downstream already reads `session.startDate`,
+    ///   so the elapsed time, the work segment and the conditions all land
+    ///   where they belong; only the check-in schedule needs to know to skip
+    ///   the checkpoints that have already gone by.
     /// - Parameter initialConditions: the conditions picked on the New Session
     ///   screen, keyed by category. Each becomes a `ConditionEvent` stamped at
     ///   the session's start.
     func startSession(
         activity: String,
         intervalMinutes: Int,
+        startDate: Date = .now,
         initialConditions: [FactorCategory: FactorOption] = [:]
     ) {
         // Another device may already have an in-flight session — don't start
         // a second one on top of it.
         if activeSession != nil { return }
 
-        let session = FocusSession(activity: activity, checkInIntervalMinutes: intervalMinutes)
+        // A start in the future would run the timer backwards.
+        let start = min(startDate, .now)
+        let session = FocusSession(activity: activity, startDate: start, checkInIntervalMinutes: intervalMinutes)
+        // The session began earlier; the *record* of it is being made now.
+        session.createdAt = .now
         context.insert(session)
         let workSegment = SessionSegment(type: .work, startDate: session.startDate)
         workSegment.session = session

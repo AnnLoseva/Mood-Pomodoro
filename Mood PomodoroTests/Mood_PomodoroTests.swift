@@ -592,6 +592,63 @@ struct Mood_PomodoroTests {
         #expect(puerhStats?.checkInCount == 0)
         #expect(puerhStats?.hasEnoughData == false)
     }
+
+    // MARK: - Activity names in both languages
+
+    @Test func everyQuickPickActivityHasAnEnglishName() {
+        for category in ActivityCategory.allCases {
+            #expect(SeedTranslations.english[category.label] != nil, "no English name for \(category.label)")
+        }
+    }
+
+    @Test func quickPickActivitiesHaveDistinctNamesAndIcons() {
+        // A repeated key would crash `SeedTranslations.english`'s dictionary
+        // literal at launch, and a repeated icon would be a copy-paste slip.
+        let labels = ActivityCategory.allCases.map(\.label)
+        let icons = ActivityCategory.allCases.map(\.imageName)
+        #expect(Set(labels).count == labels.count)
+        #expect(Set(icons).count == icons.count)
+    }
+
+    @Test func activityNamesReadInWhicheverLanguageTheAppIsIn() {
+        AppLanguage.$override.withValue(.en) {
+            #expect(Ldata("Уборка") == "Cleaning")
+            #expect(Ldata("Готовка еды") == "Cooking")
+            // Already English, and stays English.
+            #expect(Ldata("cleaning") == "Cleaning")
+        }
+        AppLanguage.$override.withValue(.ru) {
+            #expect(Ldata("Уборка") == "Уборка")
+            // Written in English, read back in Russian.
+            #expect(Ldata("Cleaning") == "Уборка")
+            #expect(Ldata("cooking") == "Готовка еды")
+            #expect(Ldata("work") == "Работа метапелет")
+        }
+    }
+
+    @Test func somethingTypedByHandIsLeftExactlyAsWritten() {
+        AppLanguage.$override.withValue(.en) {
+            #expect(Ldata("Прополка грядок") == "Прополка грядок")
+        }
+        AppLanguage.$override.withValue(.ru) {
+            #expect(Ldata("Weeding the beds") == "Weeding the beds")
+        }
+    }
+
+    @Test func theSameActivityInTwoLanguagesCountsAsOne() {
+        let start = Date(timeIntervalSince1970: 0)
+        let sessions = [
+            FocusSession(activity: "Уборка", startDate: start, checkInIntervalMinutes: 10),
+            FocusSession(activity: "cleaning", startDate: start, checkInIntervalMinutes: 10),
+            FocusSession(activity: "Чтение", startDate: start, checkInIntervalMinutes: 10)
+        ]
+        let stats = AnalyticsService.activityStatistics(sessions: sessions)
+        #expect(stats.count == 2)
+        #expect(stats.contains { $0.activityName == "Уборка" })
+        // And the filter reaches both spellings.
+        let sessionsForCleaning = sessions.filter { canonicalData($0.activity) == canonicalData("cleaning") }
+        #expect(sessionsForCleaning.count == 2)
+    }
 }
 
 private extension Double {

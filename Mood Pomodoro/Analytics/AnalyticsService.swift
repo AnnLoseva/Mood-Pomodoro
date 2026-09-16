@@ -216,7 +216,8 @@ enum AnalyticsService {
     static func filteredCheckIns(sessions: [FocusSession], activity: String?) -> [CheckIn] {
         let relevant: [FocusSession]
         if let activity {
-            relevant = sessions.filter { $0.activity == activity }
+            let wanted = canonicalData(activity)
+            relevant = sessions.filter { canonicalData($0.activity) == wanted }
         } else {
             relevant = sessions
         }
@@ -228,7 +229,9 @@ enum AnalyticsService {
     static func activityStatistics(sessions: [FocusSession]) -> [ActivityStatistics] {
         var grouped: [String: [CheckIn]] = [:]
         for session in sessions {
-            grouped[session.activity, default: []].append(contentsOf: session.checkIns ?? [])
+            // Keyed by the canonical name, so an activity logged under an
+            // English spelling doesn't split off a second row of its own.
+            grouped[canonicalData(session.activity), default: []].append(contentsOf: session.checkIns ?? [])
         }
         return grouped
             .map { ActivityStatistics(activityName: $0.key, averageMood: averageMood(of: $0.value), checkInCount: $0.value.count) }

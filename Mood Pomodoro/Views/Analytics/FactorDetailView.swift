@@ -13,7 +13,7 @@ struct FactorDetailView: View {
     @State private var activityFilter: String?
 
     private var activityNames: [String] {
-        Array(Set(sessions.map(\.activity))).sorted()
+        Array(Set(sessions.map { canonicalData($0.activity) })).sorted()
     }
 
     private var stats: FactorCategoryStatistics {

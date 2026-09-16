@@ -124,7 +124,7 @@ struct ActivityEntrySheet: View {
                     .diaryField()
                 FlowLayout(spacing: 8) {
                     ForEach(ActivityCategory.allCases) { category in
-                        DiaryChip(title: category.displayLabel, isSelected: activity == category.label) {
+                        DiaryChip(title: category.displayLabel, isSelected: canonicalData(activity) == category.label) {
                             activity = category.label
                         }
                     }

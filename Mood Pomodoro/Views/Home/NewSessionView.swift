@@ -137,7 +137,7 @@ private struct CategoryPicker: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(ActivityCategory.allCases) { category in
-                    let isSelected = category.label == selectedLabel
+                    let isSelected = category.label == canonicalData(selectedLabel)
                     Button {
                         onSelect(category)
                     } label: {
@@ -154,6 +154,12 @@ private struct CategoryPicker: View {
                             Text(category.displayLabel)
                                 .font(.lora(11, weight: isSelected ? .semibold : .regular))
                                 .foregroundStyle(isSelected ? AppTheme.forest : AppTheme.inkSoft)
+                                // Names run from "Лего" to "Электроника на
+                                // макете"; a fixed width keeps every tile the
+                                // same size instead of one stretching the row.
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2, reservesSpace: true)
+                                .frame(width: 76)
                         }
                     }
                     .buttonStyle(.plain)

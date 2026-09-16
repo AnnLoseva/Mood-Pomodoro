@@ -119,21 +119,114 @@ enum SeedTranslations {
         "Зачем я вообще этим занимаюсь?": "Why am I even doing this?",
         "Я вообще ничего не понимаю / слишком сложно": "I don't understand anything / it's too hard",
 
-        // Quick-pick activities (and a common typed one)
+        // Quick-pick activities
+        "Зарядка": "Exercise",
+        "Купить продукты": "Groceries",
+        "Уборка": "Cleaning",
+        "Работа метапелет": "Metapelet work",
+        "Прогулка": "Walk",
+        "Просмотр сериалов": "Watching shows",
+        "Видеоигры": "Video games",
+        "Готовка еды": "Cooking",
+        "Дневной сон": "Nap",
         "Математика": "Math",
-        "Электроника": "Electronics",
+        "Электроника на макете": "Electronics — breadboard",
+        "Электроника — пайка": "Electronics — soldering",
         "Чтение": "Reading",
+        "Программирование": "Programming",
+        "Рисование": "Drawing",
+        "Лего": "Lego",
+        "Музыкальные инструменты": "Playing instruments",
+        "Учёба и теория": "Studying / theory",
+        "Геймдев": "Gamedev",
+        "Писательство": "Writing",
+        "3D-моделирование": "3D modeling",
+
+        // Retired quick-picks. No longer offered, but sessions recorded
+        // under them are still in history and still have to read in English.
+        "Электроника": "Electronics",
         "Заметки": "Notes",
         "Код": "Code",
         "Планы": "Plans",
-        "Творчество": "Creative work",
-        "Программирование": "Programming"
+        "Творчество": "Creative work"
     ]
+
+    /// English spellings that mean one of our activities but aren't the
+    /// mirror image of an `english` entry — activities typed by hand in
+    /// English, or under an older name. Keys are lowercased. An exact
+    /// `english` pair wins over an alias, so only spellings that no pair
+    /// already covers belong here.
+    private nonisolated static let englishAliases: [String: String] = [
+        "cleaning up": "Уборка",
+        "tidying": "Уборка",
+        "groceries shopping": "Купить продукты",
+        "grocery shopping": "Купить продукты",
+        "shopping": "Купить продукты",
+        "cooking food": "Готовка еды",
+        "work": "Работа метапелет",
+        "walking": "Прогулка",
+        "a walk": "Прогулка",
+        "tv shows": "Просмотр сериалов",
+        "series": "Просмотр сериалов",
+        "watching series": "Просмотр сериалов",
+        "gaming": "Видеоигры",
+        "games": "Видеоигры",
+        "video game": "Видеоигры",
+        "daytime nap": "Дневной сон",
+        "napping": "Дневной сон",
+        "maths": "Математика",
+        "mathematics": "Математика",
+        "breadboard": "Электроника на макете",
+        "soldering": "Электроника — пайка",
+        "coding": "Программирование",
+        "painting": "Рисование",
+        "playing music": "Музыкальные инструменты",
+        "guitar": "Музыкальные инструменты",
+        "study": "Учёба и теория",
+        "studying": "Учёба и теория",
+        "theory": "Учёба и теория",
+        "game dev": "Геймдев",
+        "3d modelling": "3D-моделирование",
+        "3d": "3D-моделирование"
+    ]
+
+    /// The other direction: a record typed in English ("cleaning") read back
+    /// as the Russian name it belongs to ("Уборка"), so the two don't sit in
+    /// analytics as two separate activities. Keys are lowercased.
+    nonisolated static let russian: [String: String] = {
+        var map = englishAliases
+        for (ru, en) in english {
+            // An `english` entry wins over an alias: it is the exact pair.
+            map[en.lowercased()] = ru
+        }
+        return map
+    }()
 }
 
-/// Display form of a stored built-in name: English when the app is in
-/// English and the name is one of ours; otherwise unchanged.
+/// Display form of a stored built-in name, in whichever language the app is
+/// in: "Уборка" reads as "Cleaning" in English, and a record written as
+/// "cleaning" reads as "Уборка" in Russian. Anything the user typed that
+/// isn't one of ours is shown exactly as written.
 nonisolated func Ldata(_ text: String) -> String {
-    guard AppLanguage.current == .en else { return text }
-    return SeedTranslations.english[text] ?? text
+    switch AppLanguage.current {
+    case .en:
+        if let english = SeedTranslations.english[text] { return english }
+        // Already English, but possibly an older spelling of one of ours.
+        guard let russian = SeedTranslations.russian[normalizedDataKey(text)] else { return text }
+        return SeedTranslations.english[russian] ?? text
+    case .ru:
+        return SeedTranslations.russian[normalizedDataKey(text)] ?? text
+    }
+}
+
+/// The Russian name a stored one belongs to — the form history is grouped
+/// by, so sessions logged as "Уборка" and as "cleaning" count as one
+/// activity rather than two. Names that aren't ours are returned unchanged.
+nonisolated func canonicalData(_ text: String) -> String {
+    if SeedTranslations.english[text] != nil { return text }
+    return SeedTranslations.russian[normalizedDataKey(text)] ?? text
+}
+
+private nonisolated func normalizedDataKey(_ text: String) -> String {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 }

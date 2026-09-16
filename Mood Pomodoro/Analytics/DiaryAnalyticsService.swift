@@ -292,7 +292,7 @@ extension AnalyticsService {
         sessions: [FocusSession],
         checkIns: [CheckIn]
     ) -> [ActivityDurationStatistics] {
-        let grouped = Dictionary(grouping: sessions, by: \.activity)
+        let grouped = Dictionary(grouping: sessions) { canonicalData($0.activity) }
         return grouped.map { activity, group in
             let ids = Set(group.map(\.id))
             let matching = checkIns.filter { checkIn in

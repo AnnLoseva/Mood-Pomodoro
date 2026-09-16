@@ -139,6 +139,8 @@ extension AnalyticsService {
         diaryFactors: [ConditionEvent] = [],
         foodEntries: [FoodEntry] = [],
         hungerEntries: [HungerEntry] = [],
+        emotionEntries: [EmotionEntry] = [],
+        impulseEntries: [ImpulseEntry] = [],
         healthCycleMarks: [CycleMark] = [],
         healthMedication: HealthMedicationDay? = nil,
         calendar: Calendar = .current
@@ -152,6 +154,12 @@ extension AnalyticsService {
         let dayFactors = diaryFactors
             .filter { $0.session == nil && calendar.isDate($0.timestamp, inSameDayAs: date) }
             .sorted { $0.timestamp < $1.timestamp }
+        let dayEmotions = emotionEntries
+            .filter { !$0.isEmpty && calendar.isDate($0.eventDate, inSameDayAs: date) }
+            .sorted { $0.eventDate < $1.eventDate }
+        let dayImpulses = impulseEntries
+            .filter { calendar.isDate($0.eventDate, inSameDayAs: date) }
+            .sorted { $0.eventDate < $1.eventDate }
         let support = supportEntry(on: date, entries: supportEntries, calendar: calendar)
         // What the user marked herself always wins; Health only answers for
         // the days she didn't mark. Two sources, never added together.
@@ -194,6 +202,8 @@ extension AnalyticsService {
         events.append(contentsOf: hungerEntries
             .filter { !$0.isEmpty && calendar.isDate($0.eventDate, inSameDayAs: date) }
             .map(hungerTimelineEvent))
+        events.append(contentsOf: dayEmotions.map(emotionTimelineEvent))
+        events.append(contentsOf: dayImpulses.map(impulseTimelineEvent))
         if let support, let time = support.time {
             events.append(
                 TimelineEvent(
@@ -240,7 +250,10 @@ extension AnalyticsService {
             isPeriodDay: isPeriodDay(date, marks: marks, calendar: calendar),
             support: supportStatus,
             notes: dayNotes.map { DiaryNoteEntry(id: $0.id, timestamp: $0.timestamp, text: $0.text) },
-            food: food
+            food: food,
+            emotions: dayEmotions.map(dayEntry),
+            impulses: dayImpulses.map(dayEntry),
+            sessionTypes: sessionTypeStatistics(sessions: startedToday, checkIns: dayCheckIns)
         )
     }
 
@@ -255,6 +268,8 @@ extension AnalyticsService {
         supportEntries: [SupportEntry] = [],
         foodEntries: [FoodEntry] = [],
         hungerEntries: [HungerEntry] = [],
+        emotionEntries: [EmotionEntry] = [],
+        impulseEntries: [ImpulseEntry] = [],
         healthCycleMarks: [CycleMark] = [],
         healthMedication: [Date: HealthMedicationDay] = [:],
         calendar: Calendar = .current
@@ -275,6 +290,9 @@ extension AnalyticsService {
 
         let monthCheckIns = checkIns.filter { interval.contains($0.timestamp) }
         let monthSessions = sessions.filter { interval.contains($0.startDate) }
+        let monthEmotions = emotionEntries.filter { !$0.isEmpty && interval.contains($0.eventDate) }
+        let monthImpulses = impulseEntries.filter { interval.contains($0.eventDate) }
+        let marks = cycleEntries.map(\.mark) + healthCycleMarks
 
         let dayCount = calendar.range(of: .day, in: .month, for: interval.start)?.count ?? 0
         let byDay = Dictionary(grouping: monthCheckIns) { calendar.startOfDay(for: $0.timestamp) }
@@ -282,10 +300,19 @@ extension AnalyticsService {
             guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
             let dayStart = calendar.startOfDay(for: day)
             let entries = byDay[dayStart] ?? []
+            // The calendar's two extra marks come from the same aggregation
+            // the day screen uses: the support mark she made herself (or
+            // Health's, where she made none), and menstruation only where it
+            // was actually recorded.
+            let support = supportEntry(on: dayStart, entries: supportEntries, calendar: calendar)
+            let supportStatus = support?.status
+                ?? healthMedication[dayStart].flatMap { $0.status }
             return DayMoodSummary(
                 date: dayStart,
                 averageMood: timeWeightedAverageMood(of: entries),
-                checkInCount: entries.count
+                checkInCount: entries.count,
+                supportStatus: supportStatus,
+                isPeriodDay: isPeriodDay(dayStart, marks: marks, calendar: calendar)
             )
         }
 
@@ -319,8 +346,82 @@ extension AnalyticsService {
                 sessions: monthSessions,
                 cycleEntries: cycleEntries,
                 calendar: calendar
-            )
+            ),
+            emotionCounts: emotionCounts(of: monthEmotions, calendar: calendar),
+            impulseCounts: impulseCounts(of: monthImpulses, calendar: calendar),
+            sessionTypes: sessionTypeStatistics(sessions: monthSessions, checkIns: monthCheckIns)
         )
+    }
+
+    // MARK: - Emotions and impulses
+
+    /// How often each feeling was recorded, with the number of days it
+    /// appeared on beside it — one talkative day must not look like a
+    /// pattern. Feelings with no records are left out entirely rather than
+    /// shown as zero.
+    static func emotionCounts(of entries: [EmotionEntry], calendar: Calendar = .current) -> [EmotionCount] {
+        var counts: [Emotion: Int] = [:]
+        var days: [Emotion: Set<Date>] = [:]
+        for entry in entries {
+            let day = calendar.startOfDay(for: entry.eventDate)
+            for emotion in entry.emotions {
+                counts[emotion, default: 0] += 1
+                days[emotion, default: []].insert(day)
+            }
+        }
+        return counts
+            .map { EmotionCount(emotion: $0.key, count: $0.value, dayCount: days[$0.key]?.count ?? 0) }
+            .sorted { $0.count == $1.count ? $0.emotion.rawValue < $1.emotion.rawValue : $0.count > $1.count }
+    }
+
+    /// Impulses by category. "Сделала" and "только захотелось" are counted
+    /// apart, and records where she said neither are their own number — not
+    /// folded into either answer.
+    static func impulseCounts(of entries: [ImpulseEntry], calendar: Calendar = .current) -> [ImpulseCategoryCount] {
+        ImpulseCategory.allCases.compactMap { category in
+            let matching = entries.filter { $0.category == category }
+            guard !matching.isEmpty else { return nil }
+            let strengths = matching.compactMap(\.strength)
+            return ImpulseCategoryCount(
+                category: category,
+                count: matching.count,
+                dayCount: Set(matching.map { calendar.startOfDay(for: $0.eventDate) }).count,
+                actedCount: matching.filter { $0.outcome == .acted }.count,
+                wantedCount: matching.filter { $0.outcome == .wanted }.count,
+                withoutOutcome: matching.filter { $0.outcome == nil }.count,
+                averageStrength: averageScale(strengths),
+                strengthCount: strengths.count
+            )
+        }
+    }
+
+    // MARK: - Sessions by type
+
+    /// Time and sessions grouped by отдых / обязательная работа / учёба,
+    /// with untyped older sessions kept as their own group. Breaks are
+    /// excluded from `activeDuration` exactly as everywhere else — a pause
+    /// inside a session is a technical interval, never a rest session.
+    static func sessionTypeStatistics(
+        sessions: [FocusSession],
+        checkIns: [CheckIn]
+    ) -> [SessionTypeStatistics] {
+        let grouped = Dictionary(grouping: sessions) { $0.sessionType }
+        return grouped.map { type, group in
+            let ids = Set(group.map(\.id))
+            let matching = checkIns.filter { checkIn in
+                guard let sessionID = checkIn.session?.id else { return false }
+                return ids.contains(sessionID)
+            }
+            return SessionTypeStatistics(
+                type: type,
+                activeDuration: group.reduce(0) { $0 + $1.activeWorkDuration() },
+                breakDuration: group.reduce(0) { $0 + $1.breakDuration() },
+                sessionCount: group.count,
+                checkInCount: matching.count,
+                averageMood: averageMood(of: matching)
+            )
+        }
+        .sorted { $0.activeDuration > $1.activeDuration }
     }
 
     /// Mood grouped into coarse stretches of the cycle. Ranges are fixed and
@@ -512,6 +613,54 @@ extension AnalyticsService {
             subtitle: Ldata(event.categoryName),
             mood: nil,
             target: .factor(event.id)
+        )
+    }
+
+    static func emotionTimelineEvent(for entry: EmotionEntry) -> TimelineEvent {
+        TimelineEvent(
+            id: "emotion-\(entry.id.uuidString)",
+            timestamp: entry.eventDate,
+            kind: .emotion,
+            title: entry.emotions.map(\.label).joined(separator: ", "),
+            subtitle: entry.note,
+            mood: nil,
+            target: .emotion(entry.id),
+            imageName: entry.emotions.first?.imageName
+        )
+    }
+
+    static func impulseTimelineEvent(for entry: ImpulseEntry) -> TimelineEvent {
+        let detail = entry.detailLine
+        return TimelineEvent(
+            id: "impulse-\(entry.id.uuidString)",
+            timestamp: entry.eventDate,
+            kind: .impulse,
+            title: L("Импульс · \(entry.category.label)", "Impulse · \(entry.category.label)"),
+            subtitle: [detail.isEmpty ? nil : detail, entry.note]
+                .compactMap { $0 }
+                .joined(separator: " · "),
+            mood: nil,
+            target: .impulse(entry.id)
+        )
+    }
+
+    private static func dayEntry(_ entry: EmotionEntry) -> EmotionDayEntry {
+        EmotionDayEntry(
+            id: entry.id,
+            eventDate: entry.eventDate,
+            emotions: entry.emotions,
+            note: entry.note
+        )
+    }
+
+    private static func dayEntry(_ entry: ImpulseEntry) -> ImpulseDayEntry {
+        ImpulseDayEntry(
+            id: entry.id,
+            eventDate: entry.eventDate,
+            category: entry.category,
+            strength: entry.strength,
+            outcome: entry.outcome,
+            note: entry.note
         )
     }
 

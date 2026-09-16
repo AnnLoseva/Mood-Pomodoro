@@ -20,6 +20,8 @@ enum DiaryEntrySheet: Identifiable {
     case note(editing: UUID?)
     case food(editing: UUID?)
     case hunger(editing: UUID?)
+    case emotion(editing: UUID?)
+    case impulse(editing: UUID?)
     /// Sleep is keyed by its `deterministicKey`, not a `UUID`: it lives in
     /// the local health store and is identified by the night it describes.
     case sleep(editing: String?)
@@ -34,6 +36,8 @@ enum DiaryEntrySheet: Identifiable {
         case .note(let id): return "note-\(id?.uuidString ?? "new")"
         case .food(let id): return "food-\(id?.uuidString ?? "new")"
         case .hunger(let id): return "hunger-\(id?.uuidString ?? "new")"
+        case .emotion(let id): return "emotion-\(id?.uuidString ?? "new")"
+        case .impulse(let id): return "impulse-\(id?.uuidString ?? "new")"
         case .sleep(let key): return "sleep-\(key ?? "new")"
         }
     }
@@ -47,6 +51,8 @@ enum DiaryEntrySheet: Identifiable {
         case .note(let id): self = .note(editing: id)
         case .food(let id): self = .food(editing: id)
         case .hunger(let id): self = .hunger(editing: id)
+        case .emotion(let id): self = .emotion(editing: id)
+        case .impulse(let id): self = .impulse(editing: id)
         case .sleep(let key): self = .sleep(editing: key)
         }
     }
@@ -68,6 +74,8 @@ struct DiaryEntrySheetView: View {
         case .note(let id): NoteEntrySheet(editingID: id, day: day)
         case .food(let id): FoodEntrySheet(editingID: id, day: day)
         case .hunger(let id): HungerEntrySheet(editingID: id, day: day)
+        case .emotion(let id): EmotionEntrySheet(editingID: id, day: day)
+        case .impulse(let id): ImpulseEntrySheet(editingID: id, day: day)
         case .sleep(let key): SleepEntrySheet(editingID: key, day: day)
         }
     }
@@ -104,6 +112,7 @@ struct ActivityEntrySheet: View {
     @State private var day: Date
     @State private var start: Date
     @State private var end: Date
+    @State private var sessionType: SessionType?
     @State private var note = ""
     @State private var loaded = false
 
@@ -144,6 +153,9 @@ struct ActivityEntrySheet: View {
                     }
                 }
             }
+            DiaryFormSection(L("Что это было", "What kind of time")) {
+                SessionTypePicker(selection: $sessionType)
+            }
             DiaryFormSection(L("Дата", "Date")) {
                 DatePicker(L("Дата", "Date"), selection: $day, in: ...Date.now, displayedComponents: .date)
                     .diaryPicker()
@@ -175,6 +187,7 @@ struct ActivityEntrySheet: View {
         day = session.startDate
         start = session.startDate
         end = session.endDate ?? session.startDate
+        sessionType = session.sessionType
         note = session.note ?? ""
     }
 
@@ -182,9 +195,22 @@ struct ActivityEntrySheet: View {
         guard let name = DiaryDefaults.trimmed(activity) else { return }
         let text = DiaryDefaults.trimmed(note)
         if let editingID, let session = store.session(id: editingID) {
-            store.updateManualActivity(session, activity: name, start: startDate, end: endDate, note: text)
+            store.updateManualActivity(
+                session,
+                activity: name,
+                start: startDate,
+                end: endDate,
+                type: sessionType,
+                note: text
+            )
         } else {
-            store.addManualActivity(activity: name, start: startDate, end: endDate, note: text)
+            store.addManualActivity(
+                activity: name,
+                start: startDate,
+                end: endDate,
+                type: sessionType,
+                note: text
+            )
         }
     }
 

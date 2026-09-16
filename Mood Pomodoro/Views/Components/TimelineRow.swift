@@ -18,6 +18,8 @@ enum TimelineEventKind: String {
     case note
     case food
     case hunger
+    case emotion
+    case impulse
 }
 
 /// Which record a diary timeline row opens for editing, if any.
@@ -29,7 +31,11 @@ enum DiaryEditTarget: Hashable {
     case note(UUID)
     case food(UUID)
     case hunger(UUID)
-    /// A manually entered night, by its `deterministicKey`.
+    case emotion(UUID)
+    case impulse(UUID)
+    /// A night, by its `deterministicKey`. Imported nights open the same
+    /// form as typed ones — the times stay read-only there, the rating
+    /// doesn't.
     case sleep(String)
 }
 
@@ -203,6 +209,8 @@ struct TimelineRow: View {
         case .note: return "📝"
         case .food: return "🍽"
         case .hunger: return "🍎"
+        case .emotion: return "🎭"
+        case .impulse: return "⚡️"
         }
     }
 }

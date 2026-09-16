@@ -52,6 +52,12 @@ final class SleepRecord {
     /// as an unbroken night. See `SleepAggregationService.awakeningCount`.
     var awakeningCount: Int?
 
+    /// How the night felt, if the user said. **The user's own answer**, on
+    /// an imported night as much as on a typed one — which is why `apply`
+    /// below never clears it and a re-import cannot lose it. Nil means she
+    /// wasn't asked or didn't answer; it is never a middling three.
+    var qualityRaw: String?
+
     /// The resolved, overlap-free stage intervals, for the stage bar. Stored
     /// as JSON rather than a relationship: they are presentation detail of
     /// one cached row, not entities of their own.
@@ -97,6 +103,8 @@ final class SleepRecord {
         sourceBundleIdentifier = summary.sourceBundleIdentifier
         productType = summary.productType
         updatedAt = .now
+        // `qualityRaw` and `note` are deliberately absent: they are the
+        // user's, not HealthKit's, and a refined night must not erase them.
     }
 
     var kind: SleepKind {
@@ -107,6 +115,11 @@ final class SleepRecord {
     var source: SleepSource {
         get { SleepSource(rawValue: sourceRaw) ?? .healthKit }
         set { sourceRaw = newValue.rawValue }
+    }
+
+    var quality: SleepQuality? {
+        get { qualityRaw.flatMap(SleepQuality.init(rawValue:)) }
+        set { qualityRaw = newValue?.rawValue }
     }
 
     var intervals: [SleepInterval] {
@@ -143,7 +156,9 @@ final class SleepRecord {
             intervals: intervals,
             sourceName: sourceName,
             sourceBundleIdentifier: sourceBundleIdentifier,
-            productType: productType
+            productType: productType,
+            quality: quality,
+            note: note
         )
     }
 }

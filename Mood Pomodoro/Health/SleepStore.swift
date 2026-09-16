@@ -69,7 +69,12 @@ final class SleepStore {
 
     func reload() {
         let descriptor = FetchDescriptor<SleepRecord>(sortBy: [SortDescriptor(\.startDate, order: .reverse)])
-        sessions = ((try? context.fetch(descriptor)) ?? []).map(\.summary)
+        // Overlaps are resolved once, here, so every reader — the day card,
+        // the month, the overall chart, analytics — sees the same
+        // non-double-counted answer. See `resolveOverlaps(sessions:)`.
+        sessions = SleepAggregationService.resolveOverlaps(
+            sessions: ((try? context.fetch(descriptor)) ?? []).map(\.summary)
+        )
 
         let cycle = FetchDescriptor<HealthCycleDay>(sortBy: [SortDescriptor(\.day)])
         cycleMarks = ((try? context.fetch(cycle)) ?? []).compactMap(\.mark)
@@ -281,7 +286,18 @@ final class SleepStore {
             if let record = byKey.removeValue(forKey: summary.id) {
                 record.apply(summary)
             } else {
-                context.insert(SleepRecord(summary: summary))
+                let record = SleepRecord(summary: summary)
+                // A watch that refines a night shifts its bounds, which
+                // changes its key — the same night arrives as a "new" one.
+                // Carry the user's own answers over to it rather than
+                // losing a rating to a background refresh.
+                if let previous = byKey.values.first(where: {
+                    $0.startDate < summary.end && $0.endDate > summary.start
+                }) {
+                    record.qualityRaw = previous.qualityRaw
+                    record.note = previous.note
+                }
+                context.insert(record)
             }
         }
         // Whatever HealthKit no longer reports in this window is gone from
@@ -317,6 +333,7 @@ final class SleepStore {
         start: Date,
         end: Date,
         kind: SleepKind? = nil,
+        quality: SleepQuality? = nil,
         note: String? = nil,
         calendar: Calendar = .current
     ) -> SleepSessionSummary? {
@@ -331,6 +348,7 @@ final class SleepStore {
             summary = summary.with(kind: kind)
         }
         let record = SleepRecord(summary: summary, note: note)
+        record.quality = quality
         context.insert(record)
         save()
         return summary
@@ -341,6 +359,7 @@ final class SleepStore {
         start: Date,
         end: Date,
         kind: SleepKind? = nil,
+        quality: SleepQuality? = nil,
         note: String?,
         calendar: Calendar = .current
     ) {
@@ -355,7 +374,19 @@ final class SleepStore {
             summary = summary.with(kind: kind)
         }
         record.apply(summary)
+        record.quality = quality
         record.note = note
+        save()
+    }
+
+    /// The subjective rating, which belongs to *any* night — including one
+    /// Apple Health recorded. It is stored beside the imported numbers and
+    /// never mixed into them, and a re-import keeps it (see
+    /// `SleepRecord.apply` and `replaceImported`).
+    func setQuality(_ quality: SleepQuality?, forSleepID id: String) {
+        guard let record = record(key: id) else { return }
+        record.quality = quality
+        record.updatedAt = .now
         save()
     }
 
@@ -420,7 +451,11 @@ extension SleepSessionSummary {
             intervals: intervals,
             sourceName: sourceName,
             sourceBundleIdentifier: sourceBundleIdentifier,
-            productType: productType
+            productType: productType,
+            quality: quality,
+            isSuperseded: isSuperseded,
+            supersededBy: supersededBy,
+            note: note
         )
     }
 }

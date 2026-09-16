@@ -36,11 +36,18 @@ final class DiaryEntryStore {
     /// A finished activity typed in after the fact: one closed work segment,
     /// `.completed`, never scheduled for check-ins.
     @discardableResult
-    func addManualActivity(activity: String, start: Date, end: Date, note: String? = nil) -> FocusSession {
+    func addManualActivity(
+        activity: String,
+        start: Date,
+        end: Date,
+        type: SessionType? = nil,
+        note: String? = nil
+    ) -> FocusSession {
         let session = FocusSession(activity: activity, startDate: start, checkInIntervalMinutes: 10)
         session.origin = .manual
         session.state = .completed
         session.endDate = end
+        session.sessionType = type
         session.note = note
         session.createdAt = .now
         session.updatedAt = .now
@@ -52,11 +59,19 @@ final class DiaryEntryStore {
         return session
     }
 
-    func updateManualActivity(_ session: FocusSession, activity: String, start: Date, end: Date, note: String?) {
+    func updateManualActivity(
+        _ session: FocusSession,
+        activity: String,
+        start: Date,
+        end: Date,
+        type: SessionType?,
+        note: String?
+    ) {
         guard session.isManualEntry else { return }
         session.activity = activity
         session.startDate = start
         session.endDate = end
+        session.sessionType = type
         session.note = note
         // A manual entry is always exactly one work segment; rebuild it
         // rather than trying to stretch whatever sync may have left behind.
@@ -71,6 +86,17 @@ final class DiaryEntryStore {
     func deleteManualActivity(_ session: FocusSession) {
         guard session.isManualEntry else { return }
         context.delete(session)
+        save()
+    }
+
+    /// Sets (or clears) what a session was — отдых, обязательная работа or
+    /// учёба. Works on *any* session, timer-started or typed in, finished or
+    /// still running: the type is a separate answer from the name, and she
+    /// may only realise afterwards which one it was. Clearing it puts the
+    /// session back to "не выбрано", which is a real state, not a default.
+    func setSessionType(_ type: SessionType?, for session: FocusSession) {
+        session.sessionType = type
+        session.touch()
         save()
     }
 
@@ -313,6 +339,87 @@ final class DiaryEntryStore {
         save()
     }
 
+    // MARK: - Emotions
+
+    /// One or more feelings at a moment. No session is involved, and no
+    /// `CheckIn` is created: an emotion is its own record, and the app must
+    /// never invent a neutral mood just to hold one. An empty selection is
+    /// not "спокойно" — it is nothing, so nothing is written.
+    @discardableResult
+    func addEmotions(_ emotions: [Emotion], note: String? = nil, at eventDate: Date) -> EmotionEntry? {
+        guard !emotions.isEmpty else { return nil }
+        let entry = EmotionEntry(eventDate: eventDate, emotions: emotions, note: note)
+        context.insert(entry)
+        save()
+        return entry
+    }
+
+    /// Editing down to no emotions at all deletes the record rather than
+    /// leaving an empty one behind — same rule as adding.
+    func updateEmotions(_ entry: EmotionEntry, emotions: [Emotion], note: String?, at eventDate: Date) {
+        guard !emotions.isEmpty else {
+            deleteEmotions(entry)
+            return
+        }
+        entry.emotions = emotions
+        entry.note = note
+        entry.eventDate = eventDate
+        entry.updatedAt = .now
+        save()
+    }
+
+    func deleteEmotions(_ entry: EmotionEntry) {
+        context.delete(entry)
+        save()
+    }
+
+    // MARK: - Impulses
+
+    /// A category and a time is the whole minimum. Everything else stays nil
+    /// unless she fills it in — the app never guesses a strength and never
+    /// assumes she acted on it.
+    @discardableResult
+    func addImpulse(
+        category: ImpulseCategory,
+        strength: ImpulseStrength? = nil,
+        outcome: ImpulseOutcome? = nil,
+        note: String? = nil,
+        at eventDate: Date
+    ) -> ImpulseEntry {
+        let entry = ImpulseEntry(
+            eventDate: eventDate,
+            category: category,
+            strength: strength,
+            outcome: outcome,
+            note: note
+        )
+        context.insert(entry)
+        save()
+        return entry
+    }
+
+    func updateImpulse(
+        _ entry: ImpulseEntry,
+        category: ImpulseCategory,
+        strength: ImpulseStrength?,
+        outcome: ImpulseOutcome?,
+        note: String?,
+        at eventDate: Date
+    ) {
+        entry.category = category
+        entry.strength = strength
+        entry.outcome = outcome
+        entry.note = note
+        entry.eventDate = eventDate
+        entry.updatedAt = .now
+        save()
+    }
+
+    func deleteImpulse(_ entry: ImpulseEntry) {
+        context.delete(entry)
+        save()
+    }
+
     // MARK: - Notes
 
     @discardableResult
@@ -359,6 +466,14 @@ final class DiaryEntryStore {
 
     func hunger(id: UUID) -> HungerEntry? {
         try? context.fetch(FetchDescriptor<HungerEntry>(predicate: #Predicate { $0.id == id })).first
+    }
+
+    func emotions(id: UUID) -> EmotionEntry? {
+        try? context.fetch(FetchDescriptor<EmotionEntry>(predicate: #Predicate { $0.id == id })).first
+    }
+
+    func impulse(id: UUID) -> ImpulseEntry? {
+        try? context.fetch(FetchDescriptor<ImpulseEntry>(predicate: #Predicate { $0.id == id })).first
     }
 
     private func save() {

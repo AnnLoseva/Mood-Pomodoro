@@ -75,12 +75,20 @@ struct ActivityDurationStatistics: Identifiable {
     var hasEnoughData: Bool { checkInCount >= AnalyticsService.minimumSampleSize }
 }
 
-/// One cell of the month calendar.
+/// One cell of the month calendar: the day's mood colour plus the few marks
+/// that have to be visible without opening the day — a black cross where the
+/// support was explicitly *not* taken, and a red dot on a menstruation day.
 struct DayMoodSummary: Identifiable {
     var id: Date { date }
     let date: Date
     let averageMood: Double?
     let checkInCount: Int
+    /// The day's support mark, or nil for "не отмечено" — which is a
+    /// different answer from `.notTaken` and must never draw a cross.
+    var supportStatus: SupportStatus? = nil
+    /// True only where menstruation was actually recorded (by the user or
+    /// by Health). Never predicted from an assumed cycle length.
+    var isPeriodDay: Bool = false
 
     /// The illustration/emoji to show for this day — nil when nothing was recorded.
     var representativeMood: Mood? { averageMood.map(Mood.nearest(to:)) }
@@ -132,6 +140,84 @@ struct SupportMoodStat: Identifiable {
     var hasEnoughData: Bool { checkInCount >= AnalyticsService.minimumSampleSize }
 }
 
+/// One emotion record placed on the day's clock. Several feelings at one
+/// moment are one entry, never several.
+struct EmotionDayEntry: Identifiable {
+    let id: UUID
+    let eventDate: Date
+    let emotions: [Emotion]
+    let note: String?
+
+    /// "🌀 Тревожная · 🔥 Злая"
+    var summaryLine: String {
+        emotions.map { "\($0.emoji) \($0.label)" }.joined(separator: " · ")
+    }
+}
+
+/// One impulse the user marked, placed on the day's clock. The optional
+/// fields stay nil where she said nothing — an impulse with no strength is
+/// not a weak one.
+struct ImpulseDayEntry: Identifiable {
+    let id: UUID
+    let eventDate: Date
+    let category: ImpulseCategory
+    let strength: ImpulseStrength?
+    let outcome: ImpulseOutcome?
+    let note: String?
+
+    var detailLine: String {
+        var parts: [String] = []
+        if let outcome { parts.append(outcome.label) }
+        if let strength { parts.append(L("сила: \(strength.label.lowercased())", "strength: \(strength.label.lowercased())")) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// How many times each emotion was recorded in a period. A count of
+/// *records*, never a score and never a ranking of feelings.
+struct EmotionCount: Identifiable {
+    var id: String { emotion.rawValue }
+    let emotion: Emotion
+    let count: Int
+    /// On how many separate days it was recorded — the figure that matters
+    /// when one day holds five entries and another holds one.
+    let dayCount: Int
+}
+
+/// Impulses of one category over a period, with the split she actually
+/// answered. `withoutOutcome` is not "она не сделала" — it is "не сказано".
+struct ImpulseCategoryCount: Identifiable {
+    var id: String { category.rawValue }
+    let category: ImpulseCategory
+    let count: Int
+    let dayCount: Int
+    let actedCount: Int
+    let wantedCount: Int
+    let withoutOutcome: Int
+    /// Mean strength over the records that carried one.
+    let averageStrength: Double?
+    let strengthCount: Int
+}
+
+/// Time and sessions for one type — отдых, обязательная работа, учёба, or
+/// the untyped older records (`type == nil`). Never merged together and
+/// never all called "Учёба".
+struct SessionTypeStatistics: Identifiable {
+    var id: String { type?.rawValue ?? "unassigned" }
+    let type: SessionType?
+    /// Work segments only — breaks excluded, matching `activeWorkDuration()`.
+    /// A break inside a session stays part of that session and is never
+    /// counted as отдых.
+    let activeDuration: TimeInterval
+    let breakDuration: TimeInterval
+    let sessionCount: Int
+    let checkInCount: Int
+    let averageMood: Double?
+
+    var label: String { SessionType.label(for: type) }
+    var hasEnoughData: Bool { checkInCount >= AnalyticsService.minimumSampleSize }
+}
+
 /// A free-text diary note placed on its day.
 struct DiaryNoteEntry: Identifiable {
     let id: UUID
@@ -161,6 +247,15 @@ struct DailySummary {
     /// Food, hunger and appetite for the day. Empty when nothing was
     /// recorded — an untouched food block is absent, never shown as zero.
     let food: FoodDaySummary
+    /// Emotions recorded that day, oldest first. Empty means none were
+    /// written down — never "спокойно".
+    var emotions: [EmotionDayEntry] = []
+    /// Impulses marked that day, oldest first. Empty means none were
+    /// recorded — never that there weren't any.
+    var impulses: [ImpulseDayEntry] = []
+    /// The day's sessions split by type, biggest first. Untyped sessions
+    /// keep their own row rather than being folded into one of the three.
+    var sessionTypes: [SessionTypeStatistics] = []
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var totalBreakDuration: TimeInterval { activities.reduce(0) { $0 + $1.breakDuration } }
@@ -186,7 +281,14 @@ struct DailySummary {
     }
     var isEmpty: Bool {
         moodStats.isEmpty && activities.isEmpty && conditions.isEmpty && notes.isEmpty && support == nil
-            && food.isEmpty
+            && food.isEmpty && emotions.isEmpty && impulses.isEmpty
+    }
+
+    /// Every emotion recorded that day, in the enum's order, without
+    /// repeats — what the day's marker row and the calendar tooltip show.
+    var distinctEmotions: [Emotion] {
+        let recorded = Set(emotions.flatMap(\.emotions))
+        return Emotion.allCases.filter(recorded.contains)
     }
 }
 
@@ -203,6 +305,12 @@ struct MonthlySummary {
     let cycleBuckets: [CycleMoodBucket]
     let supportStats: [SupportMoodStat]
     let food: FoodMonthSummary
+    /// How often each feeling was recorded this month, most frequent first.
+    var emotionCounts: [EmotionCount] = []
+    /// Impulses by category. Absence means "не записаны", never "не было".
+    var impulseCounts: [ImpulseCategoryCount] = []
+    /// The month's time split by type of session.
+    var sessionTypes: [SessionTypeStatistics] = []
 
     var totalActiveDuration: TimeInterval { activities.reduce(0) { $0 + $1.activeDuration } }
     var sessionCount: Int { activities.reduce(0) { $0 + $1.sessionCount } }
@@ -218,7 +326,10 @@ struct MonthlySummary {
             .sorted { ($0.averageMood ?? 5) < ($1.averageMood ?? 5) }
     }
 
-    var isEmpty: Bool { moodStats.isEmpty && activities.isEmpty && food.isEmpty }
+    var isEmpty: Bool {
+        moodStats.isEmpty && activities.isEmpty && food.isEmpty && emotionCounts.isEmpty
+            && impulseCounts.isEmpty
+    }
 }
 
 extension Mood {

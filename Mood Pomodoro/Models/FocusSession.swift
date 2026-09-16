@@ -24,6 +24,12 @@ final class FocusSession {
     var checkInIntervalMinutes: Int = 10
     var stateRaw: String = SessionState.active.rawValue
     var originRaw: String = SessionOrigin.timer.rawValue
+    /// Отдых / обязательная работа / учёба — see `SessionType`. Optional,
+    /// and optional on purpose twice over: it is a lightweight CloudKit
+    /// migration (every session recorded before this existed simply has
+    /// none), and "не выбрано" has to stay a different answer from any of
+    /// the three. Nothing backfills it — the whole history is *not* учёба.
+    var sessionTypeRaw: String?
     var note: String?
     /// When the record was written. Equal to `startDate` for timer sessions;
     /// for a backdated one it is the moment the user remembered, while
@@ -89,6 +95,13 @@ final class FocusSession {
     }
 
     var isManualEntry: Bool { origin == .manual }
+
+    /// Nil means the session was recorded before types existed, or the user
+    /// hasn't chosen one — never "отдых" and never "учёба" by default.
+    var sessionType: SessionType? {
+        get { sessionTypeRaw.flatMap(SessionType.init(rawValue:)) }
+        set { sessionTypeRaw = newValue?.rawValue }
+    }
 
     var checkInInterval: TimeInterval { TimeInterval(checkInIntervalMinutes * 60) }
 

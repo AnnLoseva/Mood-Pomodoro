@@ -108,6 +108,56 @@ enum SleepKind: String, Codable, Sendable {
     }
 }
 
+/// How the night felt, in the user's own judgement. Five steps, entirely
+/// optional, and **never computed**: a long night can feel awful and a short
+/// one fine, so this cannot be derived from duration, from stages, or from
+/// anything else the watch recorded. It is her answer, kept beside the
+/// measurements rather than mixed into them, and a re-import never touches
+/// it.
+enum SleepQuality: String, ScaleStep {
+    case veryGood
+    case good
+    case okay
+    case bad
+    case veryBad
+
+    var id: String { rawValue }
+
+    static var orderedCases: [SleepQuality] { [.veryGood, .good, .okay, .bad, .veryBad] }
+
+    var scale: Double {
+        switch self {
+        case .veryGood: return 5
+        case .good: return 4
+        case .okay: return 3
+        case .bad: return 2
+        case .veryBad: return 1
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .veryGood: return L("Очень хорошо", "Very good")
+        case .good: return L("Хорошо", "Good")
+        case .okay: return L("Нормально", "Okay")
+        case .bad: return L("Плохо", "Bad")
+        case .veryBad: return L("Очень плохо", "Very bad")
+        }
+    }
+
+    /// Moon phases again, like `EnergyLevel` — a face here would read as a
+    /// mood, which this is not.
+    var emoji: String {
+        switch self {
+        case .veryGood: return "🌕"
+        case .good: return "🌔"
+        case .okay: return "🌓"
+        case .bad: return "🌒"
+        case .veryBad: return "🌑"
+        }
+    }
+}
+
 /// Where a session's numbers came from. Kept on every record so the UI can
 /// say it plainly and so a HealthKit re-import never silently overwrites
 /// something the user typed herself.
@@ -158,6 +208,19 @@ struct SleepSessionSummary: Identifiable, Hashable, Sendable {
     let sourceName: String?
     let sourceBundleIdentifier: String?
     let productType: String?
+    /// The user's own answer about this night, if she gave one. Survives
+    /// every re-import — see `SleepRecord.apply`.
+    var quality: SleepQuality? = nil
+    /// True when another record already covers this stretch of the clock
+    /// and won it — see `SleepAggregationService.resolveOverlaps(sessions:)`.
+    /// Such a session is still shown (so nothing silently disappears) but is
+    /// never added to a total.
+    var isSuperseded: Bool = false
+    /// What is covering it, for the one line the UI shows. Nil unless
+    /// `isSuperseded`.
+    var supersededBy: SleepSource? = nil
+    /// Free-text note from a record the user typed or annotated herself.
+    var note: String? = nil
 
     func duration(of stage: SleepStage) -> TimeInterval { stageDurations[stage] ?? 0 }
 
@@ -173,6 +236,11 @@ struct SleepSessionSummary: Identifiable, Hashable, Sendable {
 }
 
 /// One day's sleep as the diary shows it: the night, any naps, and the sum.
+///
+/// `sessions` holds everything filed under the day, superseded records
+/// included, so the card can still show a HealthKit night the user replaced
+/// by hand. Every *total* below counts only `countedSessions` — the
+/// overlap-free set — so one night can never be reported twice.
 struct SleepDaySummary: Sendable {
     let day: Date
     let sessions: [SleepSessionSummary]
@@ -180,13 +248,26 @@ struct SleepDaySummary: Sendable {
     static func empty(_ day: Date) -> SleepDaySummary { SleepDaySummary(day: day, sessions: []) }
 
     var isEmpty: Bool { sessions.isEmpty }
-    var night: SleepSessionSummary? { sessions.first { $0.kind == .night } }
-    var naps: [SleepSessionSummary] { sessions.filter { $0.kind == .nap } }
 
-    /// Night plus naps. Sessions never overlap each other, so this is a
-    /// plain sum rather than another union.
-    var totalSleep: TimeInterval { sessions.reduce(0) { $0 + $1.totalSleep } }
+    /// What the day's figures are built from: everything that wasn't
+    /// overridden by an overlapping record.
+    var countedSessions: [SleepSessionSummary] { sessions.filter { !$0.isSuperseded } }
+    var supersededSessions: [SleepSessionSummary] { sessions.filter(\.isSuperseded) }
+
+    var night: SleepSessionSummary? { countedSessions.first { $0.kind == .night } }
+    var naps: [SleepSessionSummary] { countedSessions.filter { $0.kind == .nap } }
+
+    /// Night plus naps. Counted sessions never overlap each other, so this
+    /// is a plain sum rather than another union.
+    var totalSleep: TimeInterval { countedSessions.reduce(0) { $0 + $1.totalSleep } }
     var napTotal: TimeInterval { naps.reduce(0) { $0 + $1.totalSleep } }
+
+    /// The day's subjective answer: the night's, or — if only naps were
+    /// rated — the first rating there is. Never averaged across sleeps and
+    /// never invented.
+    var quality: SleepQuality? {
+        night?.quality ?? countedSessions.compactMap(\.quality).first
+    }
 
     /// The night's own stage split, which is the only one worth drawing; a
     /// twenty-minute nap's stages say very little.

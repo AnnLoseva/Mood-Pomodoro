@@ -102,10 +102,15 @@ final class SessionManager {
     /// - Parameter initialConditions: the conditions picked on the New Session
     ///   screen, keyed by category. Each becomes a `ConditionEvent` stamped at
     ///   the session's start.
+    /// - Parameter type: отдых / обязательная работа / учёба, if she picked
+    ///   one. Nil is a real answer ("не выбрано") and is never filled in
+    ///   from the activity's name — the same activity can be any of the
+    ///   three on different days.
     func startSession(
         activity: String,
         intervalMinutes: Int,
         startDate: Date = .now,
+        type: SessionType? = nil,
         initialConditions: [FactorCategory: FactorOption] = [:]
     ) {
         // Another device may already have an in-flight session — don't start
@@ -115,6 +120,7 @@ final class SessionManager {
         // A start in the future would run the timer backwards.
         let start = min(startDate, .now)
         let session = FocusSession(activity: activity, startDate: start, checkInIntervalMinutes: intervalMinutes)
+        session.sessionType = type
         // The session began earlier; the *record* of it is being made now.
         session.createdAt = .now
         context.insert(session)
@@ -358,6 +364,16 @@ final class SessionManager {
     /// Fills in the reason on a check-in that was created mood-only from a
     /// notification action, e.g. when the user opens the app from the
     /// "Почему так?" follow-up instead of answering it from the lock screen.
+    /// Records what a session was, or takes the answer back off it. Live
+    /// sessions included — she may only realise mid-session that this is
+    /// работа rather than учёба.
+    func setSessionType(_ type: SessionType?, for session: FocusSession) {
+        session.sessionType = type
+        session.touch()
+        try? context.save()
+        revision += 1
+    }
+
     func updateReason(_ reason: String?, for checkInID: UUID) {
         let descriptor = FetchDescriptor<CheckIn>(predicate: #Predicate { $0.id == checkInID })
         guard let checkIn = try? context.fetch(descriptor).first else { return }

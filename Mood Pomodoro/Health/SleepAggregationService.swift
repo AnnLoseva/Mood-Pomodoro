@@ -25,6 +25,8 @@ import Foundation
 ///    afternoon nap can never merge into one twelve-hour "sleep".
 /// 5. **A session belongs to the day it ended** — the day the user woke up
 ///    and then lived.
+/// 6. **A manual entry beats an imported one where they overlap**, and the
+///    loser is marked rather than deleted — see `resolveOverlaps(sessions:)`.
 enum SleepAggregationService {
 
     /// A gap at least this long starts a new session. Long enough to ride
@@ -137,6 +139,52 @@ enum SleepAggregationService {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return "\(origin.rawValue)|\(formatter.string(from: start))|\(formatter.string(from: end))"
+    }
+
+    // MARK: - Manual vs imported (rule 6)
+
+    /// The rule for two records claiming the same stretch of night: **a
+    /// record the user typed herself wins over one imported from Apple
+    /// Health.** Health is a cache of someone else's measurement; her own
+    /// entry is the record, and she usually added it precisely because the
+    /// import was wrong or missing.
+    ///
+    /// Everything is kept — nothing is deleted and nothing disappears from
+    /// the day — but the loser is marked `isSuperseded` and is never added
+    /// to a total, so one night can't be reported twice (the failure this
+    /// exists to prevent: 8 hours slept, 16 hours shown).
+    ///
+    /// Order of preference, applied greedily so the answer never depends on
+    /// input order:
+    /// 1. manual before imported;
+    /// 2. then the earlier start;
+    /// 3. then the longer sleep;
+    /// 4. then the id, so two devices agree.
+    ///
+    /// Two records that merely touch (one ends exactly where the next
+    /// begins) do not overlap and both count.
+    static func resolveOverlaps(sessions: [SleepSessionSummary]) -> [SleepSessionSummary] {
+        let ordered = sessions.sorted { lhs, rhs in
+            if lhs.source != rhs.source { return lhs.source == .manual }
+            if lhs.start != rhs.start { return lhs.start < rhs.start }
+            if lhs.totalSleep != rhs.totalSleep { return lhs.totalSleep > rhs.totalSleep }
+            return lhs.id < rhs.id
+        }
+
+        var kept: [SleepSessionSummary] = []
+        var resolved: [String: SleepSessionSummary] = [:]
+        for session in ordered {
+            var copy = session
+            if let winner = kept.first(where: { $0.start < session.end && $0.end > session.start }) {
+                copy.isSuperseded = true
+                copy.supersededBy = winner.source
+            } else {
+                kept.append(copy)
+            }
+            resolved[copy.id] = copy
+        }
+        // Back into the caller's order, so nothing else has to re-sort.
+        return sessions.compactMap { resolved[$0.id] }
     }
 
     // MARK: - Grouping (rule 4)

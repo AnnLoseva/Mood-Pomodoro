@@ -47,6 +47,7 @@ struct DiaryView: View {
     @State private var entrySheet: DiaryEntrySheet?
     @State private var showExport = false
     @State private var editingDay: Date?
+    @State private var freezeDiaryScroll = false
 
     private let calendar = Calendar.current
 
@@ -140,9 +141,11 @@ struct DiaryView: View {
                             }
                             .frame(maxWidth: isWide ? 1100 : nil)
                             .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, isWide ? 20 : 12)
                             .padding(.vertical, 20)
                         }
+                        .scrollDisabled(freezeDiaryScroll)
+                        .onPreferenceChange(TimelineBlocksScrollKey.self) { freezeDiaryScroll = $0 }
                     }
                 }
             }

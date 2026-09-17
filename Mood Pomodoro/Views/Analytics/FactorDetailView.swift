@@ -1,107 +1,109 @@
-//
-//  FactorDetailView.swift
-//  Mood Pomodoro
-//
-
 import SwiftUI
-import SwiftData
 
 struct FactorDetailView: View {
-    let category: FactorCategory
+    let categoryID: UUID
+    let snapshot: AnalyticsSnapshot
+    @State private var leftID: String?
+    @State private var rightID: String?
 
-    @Query private var sessions: [FocusSession]
-    @State private var activityFilter: String?
-
-    private var activityNames: [String] {
-        Array(Set(sessions.map { canonicalData($0.activity) })).sorted()
-    }
-
-    private var stats: FactorCategoryStatistics {
-        AnalyticsService.factorStatistics(categories: [category], sessions: sessions, activity: activityFilter).first
-            ?? FactorCategoryStatistics(id: category.id, categoryName: category.name, categoryIcon: category.icon, optionStats: [])
+    private var rows: [AnalyticsFactorRow] {
+        snapshot.factors.filter { $0.categoryID == categoryID }
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                if activityNames.count > 1 {
-                    activityFilterRow
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(rows) { row in
+                    optionBlock(row)
                 }
-
-                VStack(spacing: 10) {
-                    ForEach(stats.optionStats) { option in
-                        optionRow(option)
-                    }
+                if rows.count >= 2 {
+                    comparison
                 }
-                .padding(18)
-                .parchmentCard()
-
                 Text(L("Показывает связь, не причину: среднее состояние в твоих наблюдениях, а не вывод о том, что помогает.", "Shows an association, not a cause: average mood in your observations, not a conclusion about what helps."))
                     .font(.lora(12))
                     .foregroundStyle(AppTheme.inkSoft)
-                    .padding(.horizontal, 4)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 6) {
-                    Text(category.icon)
-                    Text(Ldata(category.name)).font(.lora(17, weight: .semibold)).foregroundStyle(AppTheme.ink)
-                }
-            }
-        }
-    }
-
-    private var activityFilterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                filterChip(title: L("Все", "All"), isSelected: activityFilter == nil) { activityFilter = nil }
-                ForEach(activityNames, id: \.self) { name in
-                    filterChip(title: Ldata(name), isSelected: activityFilter == name) { activityFilter = name }
-                }
-            }
-        }
-    }
-
-    private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.lora(13, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5)))
-                .overlay(Capsule().stroke(AppTheme.border, lineWidth: isSelected ? 0 : 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func optionRow(_ option: FactorOptionStatistics) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                FactorIconView(icon: option.optionIcon, iconImageName: option.optionIconImageName, size: 22)
-                Text(Ldata(option.optionName))
-                    .font(.lora(15, weight: .medium))
+                Text(Ldata(rows.first?.categoryName ?? ""))
+                    .font(.lora(17, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
-                Spacer()
-                if let avg = option.averageMood {
-                    Text(String(format: "%.1f / 5", avg))
-                        .font(.lora(15, weight: .semibold))
-                        .foregroundStyle(AppTheme.forest)
-                }
-            }
-            if option.hasEnoughData {
-                Text("\(option.checkInCount) check-ins" + (option.goodMoodShare.map { L(" · \(Int(($0 * 100).rounded()))% хороших", " · \(Int(($0 * 100).rounded()))% good") } ?? ""))
-                    .font(.lora(12))
-                    .foregroundStyle(AppTheme.inkSoft)
-            } else {
-                Text(L("\(option.checkInCount) check-ins — недостаточно данных", "\(option.checkInCount) check-ins — not enough data"))
-                    .font(.lora(12))
-                    .foregroundStyle(AppTheme.inkSoft)
             }
         }
-        .padding(.vertical, 4)
+        .goblinChrome()
+    }
+
+    private func optionBlock(_ row: AnalyticsFactorRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Ldata(row.optionName))
+                .font(.lora(16, weight: .semibold))
+                .foregroundStyle(AppTheme.ink)
+            Text(L("\(row.dayCount) дн. · \(row.sessionCount) сеансов · \(row.observationCount) отметок", "\(row.dayCount) days · \(row.sessionCount) sessions · \(row.observationCount) check-ins"))
+                .font(.lora(12))
+                .foregroundStyle(AppTheme.inkSoft)
+            Text(L("настроение \(analyticsFormat(row.mood.average)) · энергия \(analyticsFormat(row.energy.average)) · мотивация \(analyticsFormat(row.motivation.average))", "mood \(analyticsFormat(row.mood.average)) · energy \(analyticsFormat(row.energy.average)) · motivation \(analyticsFormat(row.motivation.average))"))
+                .font(.lora(13))
+                .foregroundStyle(AppTheme.ink)
+            if let minutes = row.minutesToDifficult {
+                Text(L("до сложного состояния от начала фактора: \(Int(minutes.rounded())) мин.", "to a difficult state from when the factor started: \(Int(minutes.rounded())) min."))
+                    .font(.lora(12))
+                    .foregroundStyle(AppTheme.inkSoft)
+            }
+            AnalyticsReliabilityBadge(confidence: row.confidence)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .parchmentCard()
+    }
+
+    private var comparison: some View {
+        let left = rows.first { $0.id == leftID }
+        let right = rows.first { $0.id == rightID }
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(L("Сравнить два варианта", "Compare two options"))
+                .font(.lora(16, weight: .semibold))
+                .foregroundStyle(AppTheme.ink)
+            picker(L("Первый", "First"), selection: $leftID, excluding: rightID)
+            picker(L("Второй", "Second"), selection: $rightID, excluding: leftID)
+            if let left, let right, left.id != right.id {
+                let delta = (left.mood.average ?? 0) - (right.mood.average ?? 0)
+                Text(L(
+                    "В дни с «\(Ldata(left.optionName))» среднее настроение было \(String(format: "%+.1f", delta)) относительно «\(Ldata(right.optionName))». Связь может зависеть от других факторов.",
+                    "On days with “\(Ldata(left.optionName))” average mood was \(String(format: "%+.1f", delta)) versus “\(Ldata(right.optionName))”. The link may depend on other factors."
+                ))
+                .font(.lora(13))
+                .foregroundStyle(AppTheme.ink)
+                AnalyticsReliabilityBadge(confidence: AnalyticsConfidence(independentCount: min(left.dayCount, right.dayCount)))
+            }
+        }
+        .padding(16)
+        .parchmentCard()
+    }
+
+    private func picker(_ title: String, selection: Binding<String?>, excluding: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(rows.filter { $0.id != excluding }) { row in
+                        let on = selection.wrappedValue == row.id
+                        Button { selection.wrappedValue = row.id } label: {
+                            Text(Ldata(row.optionName))
+                                .font(.lora(12, weight: on ? .semibold : .regular))
+                                .foregroundStyle(on ? AppTheme.parchmentCard : AppTheme.ink)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(on ? AppTheme.forest : AppTheme.chipFill))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 }

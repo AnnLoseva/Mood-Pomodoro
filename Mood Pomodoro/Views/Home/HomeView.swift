@@ -21,17 +21,14 @@ struct HomeView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Mood Pomodoro")
-                        .font(.lora(17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    LanguageMenu()
-                }
+            .overlay(alignment: .topTrailing) {
+                LanguageMenu()
+                    .frame(width: 44, height: 44)
+                    .padding(.trailing, 8)
+                    .padding(.top, 2)
             }
+            .hideRootNavigationBar()
+            .goblinChrome()
         }
     }
 }

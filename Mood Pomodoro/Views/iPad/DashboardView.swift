@@ -45,5 +45,7 @@ struct DashboardView: View {
                 NewSessionView()
             }
         }
+        .hideRootNavigationBar()
+        .goblinChrome()
     }
 }

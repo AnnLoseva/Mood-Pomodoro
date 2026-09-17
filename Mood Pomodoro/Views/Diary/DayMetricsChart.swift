@@ -103,7 +103,7 @@ struct DayMetricsChart: View {
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .background(
-                            Capsule().fill(on ? metric.color.opacity(0.16) : AppTheme.parchment.opacity(0.4))
+                            Capsule().fill(on ? metric.color.opacity(0.16) : AppTheme.chipFill)
                         )
                         .overlay(
                             Capsule().stroke(on ? metric.color : AppTheme.border, lineWidth: on ? 1.5 : 1)
@@ -342,7 +342,7 @@ struct DayMetricsChart: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppTheme.forest)
                 .frame(width: 30, height: 26)
-                .background(Capsule().fill(AppTheme.parchment.opacity(0.5)))
+                .background(Capsule().fill(AppTheme.chipFill))
                 .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1))
         }
         .buttonStyle(.plain)

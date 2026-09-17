@@ -77,6 +77,7 @@ struct ConditionsPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .goblinChrome()
     }
 }
 
@@ -110,7 +111,7 @@ private struct CategoryListView: View {
                         .padding(14)
                         .background(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(AppTheme.parchment.opacity(0.55))
+                                .fill(AppTheme.chipFill)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -157,7 +158,7 @@ private struct OptionListView: View {
                         .padding(14)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.55))
+                                .fill(isSelected ? AppTheme.forest : AppTheme.chipFill)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)

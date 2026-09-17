@@ -248,7 +248,7 @@ struct EmotionPickerGrid: View {
                     .frame(width: size + 34)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(isSelected ? emotion.color.opacity(0.18) : AppTheme.parchment.opacity(0.45))
+                            .fill(isSelected ? emotion.color.opacity(0.18) : AppTheme.chipFill)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -288,7 +288,7 @@ struct SessionTypePicker: View {
                         .padding(.vertical, 7)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(isSelected ? type.color : AppTheme.parchment.opacity(0.55))
+                                .fill(isSelected ? type.color : AppTheme.chipFill)
                         )
                         .overlay(
                             Capsule(style: .continuous)

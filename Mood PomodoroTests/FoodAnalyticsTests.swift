@@ -405,15 +405,19 @@ struct FoodAnalyticsTests {
 
         let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let food = try #require(object["food"] as? [[String: Any]])
-        #expect(food.first?["category"] as? String == "treat")
-        #expect(food.first?["treatType"] as? String == "sweet")
+        let category = try #require(food.first?["category"] as? [String: Any])
+        #expect(category["raw"] as? String == "treat")
+        let treatType = try #require(food.first?["treatType"] as? [String: Any])
+        #expect(treatType["raw"] as? String == "sweet")
         #expect(food.first?["mealDensity"] == nil)
         #expect(food.first?["taste"] == nil)
         // Hunger 30 minutes earlier is inside the window.
-        #expect(food.first?["hungerBefore"] as? Int == 4)
+        let hungerBefore = try #require(food.first?["hungerBefore"] as? [String: Any])
+        #expect(hungerBefore["value"] as? Int == 4)
 
         let hungerRecords = try #require(object["hungerAppetite"] as? [[String: Any]])
-        #expect(hungerRecords.first?["hunger"] as? Int == 4)
+        let hungerScale = try #require(hungerRecords.first?["hunger"] as? [String: Any])
+        #expect(hungerScale["value"] as? Int == 4)
         // Appetite wasn't answered, so it has no number here.
         #expect(hungerRecords.first?["appetite"] == nil)
     }

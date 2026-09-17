@@ -535,7 +535,7 @@ struct MonthCalendarGrid: View {
     }
 
     private func fill(for day: DayMoodSummary) -> Color {
-        guard let average = day.averageMood else { return AppTheme.parchment.opacity(0.35) }
+        guard let average = day.averageMood else { return AppTheme.chipFill }
         return MoodColorScale.color(for: average)
     }
 
@@ -579,7 +579,7 @@ struct MoodColorLegend: View {
             }
             swatch(label: L("Нет данных", "No data")) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(AppTheme.parchment.opacity(0.35))
+                    .fill(AppTheme.chipFill)
                     .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
             }
         }

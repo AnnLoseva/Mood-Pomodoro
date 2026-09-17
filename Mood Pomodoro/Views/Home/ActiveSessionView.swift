@@ -141,7 +141,7 @@ private struct SessionClock: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(Self.formatted(session.elapsedActiveTime(asOf: context.date)))
+            Text(Self.formatted(session.timerDurations(asOf: context.date).active))
                 .font(.lora(60, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
                 .monospacedDigit()
@@ -165,7 +165,7 @@ private struct BreakClock: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(SessionClock.formatted(session.breakDuration(asOf: context.date)))
+            Text(SessionClock.formatted(session.timerDurations(asOf: context.date).pause))
                 .font(.lora(22, weight: .medium))
                 .foregroundStyle(AppTheme.ink)
                 .monospacedDigit()

@@ -70,6 +70,7 @@ struct QuickCheckInSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .goblinChrome()
     }
 
     private func save(mood: Mood, answer: CheckInAnswer) {
@@ -125,7 +126,7 @@ private struct MoodPickerView: View {
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(AppTheme.parchment.opacity(0.55))
+                            .fill(AppTheme.chipFill)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -204,7 +205,7 @@ private struct ReasonPickerView: View {
                                 .padding()
                                 .background(
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(AppTheme.parchment.opacity(0.55))
+                                        .fill(AppTheme.chipFill)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -244,7 +245,7 @@ private struct ReasonPickerView: View {
                     .padding(.vertical, 11)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(AppTheme.parchment.opacity(0.55))
+                            .fill(AppTheme.chipFill)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)

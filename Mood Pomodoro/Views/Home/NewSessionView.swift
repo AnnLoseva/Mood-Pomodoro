@@ -54,7 +54,7 @@ struct NewSessionView: View {
                             .padding(.vertical, 13)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(AppTheme.parchment.opacity(0.5))
+                                    .fill(AppTheme.chipFill)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -204,7 +204,7 @@ struct NewSessionView: View {
                 .frame(maxWidth: .infinity)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5))
+                        .fill(isSelected ? AppTheme.forest : AppTheme.chipFill)
                 )
                 .overlay(
                     Capsule(style: .continuous)
@@ -277,7 +277,7 @@ private struct IntervalPicker: View {
                         .frame(maxWidth: .infinity)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5))
+                                .fill(isSelected ? AppTheme.forest : AppTheme.chipFill)
                         )
                         .overlay(
                             Capsule(style: .continuous)

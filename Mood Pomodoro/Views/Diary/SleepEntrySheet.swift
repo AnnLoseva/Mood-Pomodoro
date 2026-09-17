@@ -206,7 +206,10 @@ struct SleepEditorRoute: View {
                 ScrollView { SleepSessionBlock(session: sleep).padding(20) }
                     .background(AppTheme.parchmentCard)
                     .navigationTitle(L("Сон из Apple Health", "Apple Health sleep"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarColorScheme(.light, for: .navigationBar)
             }
+            .goblinChrome()
         } else { SleepEntrySheet(editingID: editingID, day: day) }
     }
 }

@@ -174,7 +174,7 @@ struct DayMarkersRow: View {
                         .foregroundStyle(AppTheme.inkSoft)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Capsule(style: .continuous).fill(marker == markers.first ? (summary.moodStats.average.map { MoodColorScale.color(for: $0).opacity(0.35) } ?? AppTheme.parchmentCard) : AppTheme.parchmentCard.opacity(0.9)))
+                        .background(Capsule(style: .continuous).fill(marker == markers.first ? (summary.moodStats.average.map { MoodColorScale.color(for: $0).opacity(0.35) } ?? AppTheme.parchmentCard) : AppTheme.parchmentCard))
                         .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: 1))
                 }
             }

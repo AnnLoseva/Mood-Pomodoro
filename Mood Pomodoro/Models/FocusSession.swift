@@ -146,7 +146,23 @@ final class FocusSession {
     /// `activeWorkDuration` directly) since it reads better at call sites
     /// that mean "how long has the timer been running".
     func elapsedActiveTime(asOf referenceDate: Date = .now) -> TimeInterval {
-        activeWorkDuration(asOf: referenceDate)
+        timerDurations(asOf: referenceDate).active
+    }
+
+    /// One pass over segments for the live clocks, so a 1-second tick never
+    /// sorts the same array twice.
+    func timerDurations(asOf referenceDate: Date = .now) -> (active: TimeInterval, pause: TimeInterval) {
+        var active: TimeInterval = 0
+        var pause: TimeInterval = 0
+        for segment in segments ?? [] {
+            let length = segment.duration(asOf: referenceDate)
+            if segment.type == .work {
+                active += length
+            } else {
+                pause += length
+            }
+        }
+        return (active, pause)
     }
 
     /// The anchor date check-in checkpoints are computed from. Shifts forward

@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 enum AppTheme {
     // MARK: - Colors
@@ -28,6 +29,81 @@ enum AppTheme {
     static let moss = Color(red: 0.486, green: 0.545, blue: 0.353)
     static let border = Color(red: 0.788, green: 0.722, blue: 0.576)
     static let borderSoft = Color(red: 0.788, green: 0.722, blue: 0.576).opacity(0.55)
+    /// Opaque chip/field fill — slightly deeper than the card, never see-through.
+    static let chipFill = Color(red: 0.945, green: 0.906, blue: 0.812)
+}
+
+extension View {
+    /// Light parchment chrome so system controls never render white-on-cream
+    /// and navigation/tab bars never sit as transparent glass over the forest.
+    func goblinChrome() -> some View {
+        self
+            .preferredColorScheme(.light)
+            .tint(AppTheme.forest)
+            .toolbarBackground(AppTheme.parchmentCard, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(AppTheme.parchmentCard, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .tabBar)
+    }
+
+    /// Root tabs keep actions in the content, not in the system navigation bar.
+    func hideRootNavigationBar() -> some View {
+        self
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("")
+    }
+}
+
+enum AppChrome {
+    static func apply() {
+        let ink = UIColor(AppTheme.ink)
+        let inkSoft = UIColor(AppTheme.inkSoft)
+        let forest = UIColor(AppTheme.forest)
+        let card = UIColor(AppTheme.parchmentCard)
+        let page = UIColor(AppTheme.parchment)
+        let border = UIColor(AppTheme.border)
+
+        let nav = UINavigationBarAppearance()
+        nav.configureWithOpaqueBackground()
+        nav.backgroundColor = card
+        nav.shadowColor = border
+        nav.titleTextAttributes = [
+            .foregroundColor: ink,
+            .font: UIFont(name: "Lora-SemiBold", size: 17) ?? .systemFont(ofSize: 17, weight: .semibold)
+        ]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
+        UINavigationBar.appearance().tintColor = forest
+        UINavigationBar.appearance().overrideUserInterfaceStyle = .light
+
+        let item = UITabBarItemAppearance()
+        item.normal.iconColor = inkSoft
+        item.normal.titleTextAttributes = [.foregroundColor: inkSoft]
+        item.selected.iconColor = forest
+        item.selected.titleTextAttributes = [.foregroundColor: UIColor(AppTheme.forestDeep)]
+
+        let tab = UITabBarAppearance()
+        tab.configureWithOpaqueBackground()
+        tab.backgroundColor = card
+        tab.shadowColor = border
+        tab.stackedLayoutAppearance = item
+        tab.inlineLayoutAppearance = item
+        tab.compactInlineLayoutAppearance = item
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
+        UITabBar.appearance().overrideUserInterfaceStyle = .light
+
+        UITextField.appearance().textColor = ink
+        UITextView.appearance().textColor = ink
+        UIDatePicker.appearance().overrideUserInterfaceStyle = .light
+        UITableView.appearance().backgroundColor = page
+        UISwitch.appearance().onTintColor = forest
+        UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).overrideUserInterfaceStyle = .light
+    }
 }
 
 // MARK: - Typography

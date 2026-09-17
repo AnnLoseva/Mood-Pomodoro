@@ -34,7 +34,9 @@ struct SessionDetailView: View {
                 .padding(.vertical, 24)
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .goblinChrome()
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text(Ldata(session.activity))

@@ -25,24 +25,15 @@ struct DiaryView: View {
     }
 
     @Environment(SessionManager.self) private var sessionManager
-    /// Sleep comes from its own local-only store, not from `@Query`: it is
-    /// deliberately outside the CloudKit container (see `LocalHealthStore`).
     @Environment(SleepStore.self) private var sleepStore
-
-    @Query private var sessions: [FocusSession]
-    @Query private var checkIns: [CheckIn]
-    @Query(sort: \FactorCategory.sortOrder) private var categories: [FactorCategory]
+    @Environment(AppTabs.self) private var tabs
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.iPadSidebarHidden) private var iPadSidebarHidden
     @Query(sort: \CycleEntry.date, order: .reverse) private var cycleEntries: [CycleEntry]
-    @Query private var supportEntries: [SupportEntry]
-    @Query private var notes: [JournalNote]
-    @Query private var conditionEvents: [ConditionEvent]
-    @Query private var foodEntries: [FoodEntry]
-    @Query private var hungerEntries: [HungerEntry]
-    @Query private var emotionEntries: [EmotionEntry]
-    @Query private var impulseEntries: [ImpulseEntry]
 
     @State private var mode: Mode = .day
     @State private var selectedDate: Date = .now
+    @State private var timelineSpan: TimelineSpan = .day
     @State private var showQuickCheckIn = false
     @State private var entrySheet: DiaryEntrySheet?
     @State private var showExport = false
@@ -52,49 +43,6 @@ struct DiaryView: View {
     private let calendar = Calendar.current
 
     private var isToday: Bool { calendar.isDateInToday(selectedDate) }
-
-    private var dailySummary: DailySummary {
-        AnalyticsService.dailySummary(
-            date: selectedDate,
-            sessions: sessions,
-            checkIns: checkIns,
-            cycleEntries: cycleEntries,
-            supportEntries: supportEntries,
-            notes: notes,
-            diaryFactors: conditionEvents,
-            foodEntries: foodEntries,
-            hungerEntries: hungerEntries,
-            emotionEntries: emotionEntries,
-            impulseEntries: impulseEntries,
-            healthCycleMarks: sleepStore.cycleMarks,
-            healthMedication: sleepStore.medicationDay(for: selectedDate, calendar: calendar),
-            calendar: calendar
-        )
-    }
-
-    /// The month's sleep, read from the local health store.
-    private var monthSleep: [SleepSessionSummary] {
-        guard let interval = calendar.dateInterval(of: .month, for: selectedDate) else { return [] }
-        return sleepStore.sessions(in: interval)
-    }
-
-    private var monthlySummary: MonthlySummary {
-        AnalyticsService.monthlySummary(
-            month: selectedDate,
-            sessions: sessions,
-            checkIns: checkIns,
-            categories: categories,
-            cycleEntries: cycleEntries,
-            supportEntries: supportEntries,
-            foodEntries: foodEntries,
-            hungerEntries: hungerEntries,
-            emotionEntries: emotionEntries,
-            impulseEntries: impulseEntries,
-            healthCycleMarks: sleepStore.cycleMarks,
-            healthMedication: sleepStore.medicationDays,
-            calendar: calendar
-        )
-    }
 
     var body: some View {
         NavigationStack {
@@ -114,30 +62,25 @@ struct DiaryView: View {
                             VStack(spacing: 16) {
                                 stepper
                                 addMenu
-                                UnifiedTimeline(date: selectedDate, period: mode == .day ? .day : .month) { target, day in
-                                    editingDay = day
-                                    entrySheet = DiaryEntrySheet(editing: target)
-                                }
-                                switch mode {
-                                case .day:
-                                    DiaryDayView(
-                                        summary: dailySummary,
-                                        sleep: sleepStore.daySummary(for: selectedDate, calendar: calendar),
-                                        isToday: isToday,
-                                        onQuickMood: { showQuickCheckIn = true },
-                                        onAdd: { entrySheet = $0 },
-                                        onEdit: { entrySheet = DiaryEntrySheet(editing: $0) }
-                                    )
-                                case .month:
-                                    DiaryMonthView(
-                                        summary: monthlySummary,
-                                        sleep: monthSleep,
-                                        isWide: isWide
-                                    ) { day in
+                                DiaryPeriodContent(
+                                    selectedDate: selectedDate,
+                                    isDayMode: mode == .day,
+                                    isWide: isWide,
+                                    isToday: isToday,
+                                    timelineSpan: $timelineSpan,
+                                    onQuickMood: { showQuickCheckIn = true },
+                                    onAdd: { entrySheet = $0 },
+                                    onEdit: { target, day in
+                                        editingDay = day
+                                        entrySheet = DiaryEntrySheet(editing: target)
+                                    },
+                                    onSelectDay: { day in
                                         selectedDate = day
                                         mode = .day
+                                        timelineSpan = .day
                                     }
-                                }
+                                )
+                                .id("\(timelineSpan.rawValue)-\(calendar.startOfDay(for: selectedDate).timeIntervalSince1970)")
                             }
                             .frame(maxWidth: isWide ? 1100 : nil)
                             .frame(maxWidth: .infinity)
@@ -149,31 +92,8 @@ struct DiaryView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(L("Дневник", "Diary"))
-                        .font(.lora(17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    LanguageMenu()
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !isToday {
-                        Button(L("Сегодня", "Today")) { selectedDate = .now }
-                            .font(.lora(14))
-                            .foregroundStyle(AppTheme.forest)
-                    }
-                    Button {
-                        showExport = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .foregroundStyle(AppTheme.forest)
-                    .accessibilityLabel(L("Экспорт", "Export"))
-                }
-            }
+            .hideRootNavigationBar()
+            .goblinChrome()
             .sheet(isPresented: $showQuickCheckIn) {
                 QuickCheckInSheet(sessionID: sessionManager.activeSession?.id)
             }
@@ -182,6 +102,12 @@ struct DiaryView: View {
             }
             .sheet(isPresented: $showExport) {
                 ExportSheet()
+            }
+            .onChange(of: tabs.diaryDay) { _, day in
+                guard let day else { return }
+                selectedDate = day
+                mode = .day
+                timelineSpan = .day
             }
         }
     }
@@ -192,19 +118,40 @@ struct DiaryView: View {
                 let isSelected = item == mode
                 Button {
                     mode = item
+                    timelineSpan = item == .day ? .day : .month
                 } label: {
                     Text(item.title)
                         .font(.lora(13, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? AppTheme.parchmentCard : AppTheme.ink)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.5)))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(isSelected ? AppTheme.forest : AppTheme.chipFill))
                         .overlay(Capsule().stroke(AppTheme.border, lineWidth: isSelected ? 0 : 1))
                 }
                 .buttonStyle(.plain)
             }
+            Spacer(minLength: 8)
+            if !isToday {
+                Button(L("Сегодня", "Today")) { selectedDate = .now }
+                    .font(.lora(13, weight: .medium))
+                    .foregroundStyle(AppTheme.forest)
+            }
+            Button { showExport = true } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(AppTheme.forest)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("Экспорт", "Export"))
+            if sizeClass != .regular {
+                LanguageMenu()
+                    .frame(width: 32, height: 32)
+            }
         }
-        .padding(.top, 12)
+        .padding(.leading, iPadSidebarHidden ? 56 : 16)
+        .padding(.trailing, 16)
+        .padding(.top, 6)
         .padding(.bottom, 4)
     }
 
@@ -238,10 +185,13 @@ struct DiaryView: View {
     private var stepper: some View {
         DiaryPeriodStepper(
             title: mode == .day ? dayTitle : monthTitle,
-            subtitle: mode == .day ? dailySummary.cycleDay.map { L("🌸 День цикла: \($0)", "🌸 Cycle day: \($0)") } : nil,
+            subtitle: mode == .day
+                ? AnalyticsService.cycleDay(for: selectedDate, marks: cycleEntries.map(\.mark) + sleepStore.cycleMarks)
+                    .map { L("🌸 День цикла: \($0)", "🌸 Cycle day: \($0)") }
+                : nil,
             onPrevious: { shift(by: -1) },
             onNext: { shift(by: 1) },
-            onTapTitle: mode == .day ? { mode = .month } : nil
+            onTapTitle: mode == .day ? { mode = .month; timelineSpan = .month } : nil
         )
     }
 

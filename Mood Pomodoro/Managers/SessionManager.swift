@@ -20,6 +20,8 @@ final class SessionManager {
     private var remoteChangeObservers: [NSObjectProtocol] = []
     @ObservationIgnored
     private var isRefreshing = false
+    @ObservationIgnored
+    private let remoteCoalescer = MainDebouncedCoalescer()
 
     private(set) var activeSession: FocusSession?
     /// Bumped on every refresh so SwiftUI rebuilds even when CloudKit mutates
@@ -59,12 +61,15 @@ final class SessionManager {
         let previousID = activeSession?.id
         let previousState = activeSession?.state
 
+        let activeRaw = SessionState.active.rawValue
+        let pausedRaw = SessionState.paused.rawValue
         let descriptor = FetchDescriptor<FocusSession>(
-            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+            predicate: #Predicate { $0.stateRaw == activeRaw || $0.stateRaw == pausedRaw },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        let all = (try? context.fetch(descriptor)) ?? []
-        repairInvariants(in: all)
-        let found = all.first { $0.isActive }
+        let inFlight = (try? context.fetch(descriptor)) ?? []
+        repairInvariants(in: inFlight)
+        let found = inFlight.first { $0.isActive }
 
         let changed = found?.id != previousID || found?.state != previousState
         activeSession = found
@@ -456,10 +461,15 @@ final class SessionManager {
     /// A CloudKit import can bring in the other device's copy of the seeded
     /// defaults (both devices seed before their first sync). Collapse those
     /// right away rather than waiting for the next launch, then re-read.
-    private func handleRemoteChange() {
-        FactorSeeder.dedupeCategories(in: context)
-        ReasonsStore.shared.reloadFromSwiftData()
-        refresh()
+    private func handleRemoteChange(isCompletedImport: Bool) {
+        PerfSignpost.interval("cloudkit.refresh") {
+            if isCompletedImport {
+                FactorSeeder.dedupeCategories(in: context)
+                ReasonsStore.shared.reloadFromSwiftData()
+                deduplicateScheduledCheckIns()
+            }
+            refresh()
+        }
     }
 
     private func observeRemoteChanges() {
@@ -467,7 +477,7 @@ final class SessionManager {
         remoteChangeObservers.append(
             center.addObserver(forName: .NSPersistentStoreRemoteChange, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    self?.handleRemoteChange()
+                    self?.remoteCoalescer.schedule { self?.handleRemoteChange(isCompletedImport: false) }
                 }
             }
         )
@@ -476,11 +486,19 @@ final class SessionManager {
                 forName: NSPersistentCloudKitContainer.eventChangedNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self] notification in
+                let isCompletedImport = Self.isCompletedCloudKitImport(notification)
                 Task { @MainActor in
-                    self?.handleRemoteChange()
+                    guard isCompletedImport else { return }
+                    self?.remoteCoalescer.schedule { self?.handleRemoteChange(isCompletedImport: true) }
                 }
             }
         )
+    }
+
+    private static func isCompletedCloudKitImport(_ notification: Notification) -> Bool {
+        guard let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                as? NSPersistentCloudKitContainer.Event else { return false }
+        return event.type == .import && event.endDate != nil
     }
 }

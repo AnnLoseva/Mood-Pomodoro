@@ -53,6 +53,7 @@ struct Mood_PomodoroApp: App {
                 // `\.locale` covers the system pieces (DatePicker, menus).
                 .id(languageRaw)
                 .environment(\.locale, language.locale)
+                .preferredColorScheme(.light)
                 .onChange(of: languageRaw) { _, _ in
                     // Notification buttons are registered with iOS as text.
                     NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)

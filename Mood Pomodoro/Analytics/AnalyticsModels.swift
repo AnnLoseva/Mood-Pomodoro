@@ -19,7 +19,7 @@ struct MoodDistribution {
     }
 }
 
-struct MoodTimelinePoint: Identifiable {
+struct MoodTimelinePoint: Identifiable, Sendable {
     var id: Int { minuteBucketStart }
     let minuteBucketStart: Int
     let averageMood: Double

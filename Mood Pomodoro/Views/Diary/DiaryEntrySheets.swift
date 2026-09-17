@@ -737,6 +737,7 @@ struct DiaryFormScaffold<Content: View>: View {
             }
         }
         .presentationDetents([.large])
+        .goblinChrome()
     }
 }
 
@@ -798,7 +799,7 @@ struct DiaryChip: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Capsule(style: .continuous).fill(isSelected ? AppTheme.forest : AppTheme.parchment.opacity(0.55)))
+            .background(Capsule(style: .continuous).fill(isSelected ? AppTheme.forest : AppTheme.chipFill))
             .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: isSelected ? 0 : 1))
         }
         .buttonStyle(.plain)
@@ -813,7 +814,7 @@ extension View {
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(highlighted ? AppTheme.forest.opacity(0.14) : AppTheme.parchment.opacity(0.55))
+                    .fill(highlighted ? AppTheme.forest.opacity(0.14) : AppTheme.chipFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)

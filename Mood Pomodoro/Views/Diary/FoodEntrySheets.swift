@@ -149,7 +149,7 @@ struct FoodEntrySheet: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isSelected ? AppTheme.forest.opacity(0.18) : AppTheme.parchment.opacity(0.5))
+                    .fill(isSelected ? AppTheme.forest.opacity(0.18) : AppTheme.chipFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)

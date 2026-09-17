@@ -1,247 +1,202 @@
-//
-//  CompareAnalyticsView.swift
-//  Mood Pomodoro
-//
-
 import SwiftUI
-import SwiftData
 
 struct CompareAnalyticsView: View {
-    private enum Mode: String, CaseIterable, Identifiable {
-        case pair
-        case combination
-        var id: String { rawValue }
-        var title: String { self == .pair ? L("Сравнить", "Compare") : L("Комбинация", "Combination") }
+    let snapshot: AnalyticsSnapshot
+    @State private var outcome = "mood"
+    @State private var context = "sleepDuration"
+    @State private var factorCategory: UUID?
+
+    private let outcomes: [(key: String, title: String)] = [
+        ("mood", L("Настроение", "Mood")),
+        ("energy", L("Энергия", "Energy")),
+        ("motivation", L("Мотивация", "Motivation")),
+        ("appetite", L("Аппетит", "Appetite")),
+        ("hunger", L("Голод", "Hunger")),
+        ("rest", L("Длительность отдыха", "Rest duration")),
+        ("work", L("Длительность работы", "Work duration")),
+        ("study", L("Длительность учёбы", "Study duration"))
+    ]
+
+    private var contexts: [(key: String, title: String)] {
+        var items: [(key: String, title: String)] = [
+            ("sleepDuration", L("Длительность сна", "Sleep duration")),
+            ("sleepQuality", L("Качество сна", "Sleep quality")),
+            ("support", L("Препараты", "Medication")),
+            ("period", L("Менструация", "Period")),
+            ("cycle", L("Этап цикла", "Cycle stage")),
+            ("emotion", L("Эмоции", "Emotions")),
+            ("impulse", L("Импульсивность", "Impulsivity")),
+            ("sessionType", L("Тип сеанса", "Session type")),
+            ("food", L("Питание", "Food"))
+        ]
+        if snapshot.factors.contains(where: { !$0.categoryName.isEmpty }) {
+            items.append(("factor", L("Пользовательское состояние", "Custom condition")))
+        }
+        return items
     }
-
-    @Query(sort: \FactorCategory.sortOrder) private var allCategories: [FactorCategory]
-    @Query private var sessions: [FocusSession]
-
-    @State private var mode: Mode = .pair
-
-    private var categories: [FactorCategory] { allCategories.filter(\.isEnabled) }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                DayContextComparison()
-                Picker(L("Режим", "Mode"), selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.title).tag($0) }
+            VStack(alignment: .leading, spacing: 16) {
+                picker(L("Результат", "Outcome"), options: outcomes, selection: $outcome)
+                picker(L("Контекст", "Context"), options: contexts, selection: $context)
+                if context == "factor" {
+                    factorCategoryPicker
                 }
-                .pickerStyle(.segmented)
 
-                if categories.isEmpty {
-                    Text(L("Нет условий для сравнения", "No conditions to compare"))
-                        .font(.lora(14))
-                        .foregroundStyle(AppTheme.inkSoft)
-                } else if mode == .pair {
-                    PairCompareView(categories: categories, sessions: sessions)
+                let groups = AnalyticsEngine.compare(days: snapshot.days, outcome: outcome, groups: groupSpecs)
+                if groups.allSatisfy({ $0.dayCount == 0 }) {
+                    AnalyticsEmptyCard(
+                        title: L("Недостаточно записей для сравнения", "Not enough records to compare"),
+                        message: L("Нужны дни с выбранным результатом и контекстом в этом периоде.", "Need days that have both the chosen outcome and context in this period.")
+                    )
                 } else {
-                    CombinationView(categories: categories, sessions: sessions)
+                    ForEach(groups) { group in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(group.label).font(.lora(15, weight: .semibold)).foregroundStyle(AppTheme.ink)
+                            Text(L(
+                                "\(group.dayCount) дн. · \(group.observationCount) наблюдений · среднее \(format(group.average))",
+                                "\(group.dayCount) days · \(group.observationCount) observations · average \(format(group.average))"
+                            ))
+                            .font(.lora(12))
+                            .foregroundStyle(AppTheme.inkSoft)
+                            AnalyticsReliabilityBadge(confidence: group.confidence)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .parchmentCard(padding: 0)
+                    }
+                    let usable = groups.filter { $0.confidence != .insufficient && $0.average != nil }
+                    if usable.count >= 2, let first = usable.first, let second = usable.dropFirst().first, let a = first.average, let b = second.average {
+                        Text(L(
+                            "В дни с «\(first.label)» среднее было \(String(format: "%+.1f", a - b)) относительно «\(second.label)». Связь может зависеть от других факторов.",
+                            "On days with “\(first.label)” the average was \(String(format: "%+.1f", a - b)) versus “\(second.label)”. The link may depend on other factors."
+                        ))
+                        .font(.lora(13))
+                        .foregroundStyle(AppTheme.ink)
+                    }
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
         }
     }
-}
 
-// MARK: - Pairwise compare
-
-private struct PairCompareView: View {
-    let categories: [FactorCategory]
-    let sessions: [FocusSession]
-
-    @State private var category: FactorCategory?
-    @State private var optionA: FactorOption?
-    @State private var optionB: FactorOption?
-    @State private var activityFilter: String?
-
-    private var activityNames: [String] { Array(Set(sessions.map(\.activity))).sorted() }
-
-    var body: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                pickerRow(title: L("Фактор", "Factor")) {
-                    Picker("", selection: $category) {
-                        Text(L("Выбери", "Choose")).tag(FactorCategory?.none)
-                        ForEach(categories) { cat in
-                            Text("\(cat.icon) \(Ldata(cat.name))").tag(FactorCategory?.some(cat))
-                        }
+    private var factorCategoryPicker: some View {
+        let categories = Dictionary(grouping: snapshot.factors, by: \.categoryID)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories.keys.sorted { a, b in
+                    (categories[a]?.first?.categoryName ?? "") < (categories[b]?.first?.categoryName ?? "")
+                }, id: \.self) { id in
+                    let on = factorCategory == id
+                    Button { factorCategory = id } label: {
+                        Text(Ldata(categories[id]?.first?.categoryName ?? ""))
+                            .font(.lora(12, weight: on ? .semibold : .regular))
+                            .foregroundStyle(on ? AppTheme.parchmentCard : AppTheme.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(on ? AppTheme.forest : AppTheme.chipFill))
                     }
-                }
-                .onChange(of: category) { _, _ in optionA = nil; optionB = nil }
-
-                if let category {
-                    pickerRow(title: L("Значение A", "Value A")) {
-                        optionPicker(selection: $optionA, options: category.enabledOptions)
-                    }
-                    pickerRow(title: L("Значение B", "Value B")) {
-                        optionPicker(selection: $optionB, options: category.enabledOptions)
-                    }
-                }
-
-                if activityNames.count > 1 {
-                    pickerRow(title: L("Активность", "Activity")) {
-                        Picker("", selection: $activityFilter) {
-                            Text(L("Все", "All")).tag(String?.none)
-                            ForEach(activityNames, id: \.self) { Text(Ldata($0)).tag(String?.some($0)) }
-                        }
-                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(18)
-            .parchmentCard()
-
-            if let category, let optionA, let optionB {
-                let result = AnalyticsService.compare(
-                    optionA: (category, optionA),
-                    optionB: (category, optionB),
-                    sessions: sessions,
-                    activity: activityFilter
-                )
-                ComparisonResultView(result: result)
-            }
         }
-    }
-
-    private func optionPicker(selection: Binding<FactorOption?>, options: [FactorOption]) -> some View {
-        Picker("", selection: selection) {
-            Text(L("Выбери", "Choose")).tag(FactorOption?.none)
-            ForEach(options) { option in
-                Text(Ldata(option.name)).tag(FactorOption?.some(option))
-            }
-        }
-    }
-
-    private func pickerRow<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack {
-            Text(title)
-                .font(.lora(14, weight: .medium))
-                .foregroundStyle(AppTheme.inkSoft)
-            Spacer()
-            content()
-                .tint(AppTheme.forest)
-        }
-    }
-}
-
-private struct ComparisonResultView: View {
-    let result: ComparisonResult
-
-    var body: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 16) {
-                resultTile(result.optionA)
-                Text("vs")
-                    .font(.lora(13))
-                    .foregroundStyle(AppTheme.inkSoft)
-                resultTile(result.optionB)
-            }
-
-            if result.canCompare, let diff = result.moodDifference {
-                Text(L("Разница: \(String(format: "%+.1f", diff))", "Difference: \(String(format: "%+.1f", diff))"))
-                    .font(.lora(15, weight: .semibold))
-                    .foregroundStyle(diff >= 0 ? AppTheme.forest : AppTheme.rustDeep)
-
-                if let a = result.optionA.averageMinutesToDifficult, let b = result.optionB.averageMinutesToDifficult {
-                    VStack(spacing: 4) {
-                        Text(L("Среднее время до 🥲 / 😭", "Avg. time until 🥲 / 😭"))
-                            .font(.lora(12))
-                            .foregroundStyle(AppTheme.inkSoft)
-                        Text(L("\(Ldata(result.optionA.optionName)): \(Int(a)) мин   ·   \(Ldata(result.optionB.optionName)): \(Int(b)) мин", "\(Ldata(result.optionA.optionName)): \(Int(a)) min   ·   \(Ldata(result.optionB.optionName)): \(Int(b)) min"))
-                            .font(.lora(13, weight: .medium))
-                            .foregroundStyle(AppTheme.ink)
-                    }
-                }
-            } else {
-                Text(L("Недостаточно данных для сравнения", "Not enough data to compare"))
-                    .font(.lora(13))
-                    .foregroundStyle(AppTheme.inkSoft)
-            }
-        }
-        .padding(18)
+        .padding(14)
         .parchmentCard()
     }
 
-    private func resultTile(_ stats: FactorOptionStatistics) -> some View {
-        VStack(spacing: 4) {
-            Text(Ldata(stats.optionName))
-                .font(.lora(15, weight: .medium))
-                .foregroundStyle(AppTheme.ink)
-            if let avg = stats.averageMood {
-                Text(String(format: "%.1f / 5", avg))
-                    .font(.lora(18, weight: .semibold))
-                    .foregroundStyle(AppTheme.forest)
-            } else {
-                Text("—").font(.lora(18)).foregroundStyle(AppTheme.inkSoft)
+    private var groupSpecs: [(id: String, label: String, include: (AnalyticsDayRow) -> Bool)] {
+        switch context {
+        case "sleepDuration":
+            return [
+                ("short", L("Сон < 6 ч", "Sleep < 6h"), { ($0.sleepSeconds ?? 0) > 0 && ($0.sleepSeconds ?? 0) < 6 * 3600 }),
+                ("mid", L("Сон 6–8 ч", "Sleep 6–8h"), { let s = $0.sleepSeconds ?? 0; return s >= 6 * 3600 && s < 8 * 3600 }),
+                ("long", L("Сон > 8 ч", "Sleep > 8h"), { ($0.sleepSeconds ?? 0) >= 8 * 3600 })
+            ]
+        case "support":
+            return [
+                ("taken", L("Принято", "Taken"), { $0.supportRaw == SupportStatus.taken.rawValue }),
+                ("skipped", L("Не принято", "Not taken"), { $0.supportRaw == SupportStatus.notTaken.rawValue }),
+                ("unrecorded", L("Не отмечено", "Not recorded"), { $0.supportRaw == nil })
+            ]
+        case "period":
+            return [
+                ("period", L("Дни менструации", "Period days"), { $0.isPeriodDay }),
+                ("other", L("Остальные дни", "Other days"), { !$0.isPeriodDay })
+            ]
+        case "cycle":
+            return [
+                ("d1", L("Дни 1–5", "Days 1–5"), { ($0.cycleDay ?? 0) >= 1 && ($0.cycleDay ?? 0) <= 5 }),
+                ("d2", L("Дни 6–14", "Days 6–14"), { ($0.cycleDay ?? 0) >= 6 && ($0.cycleDay ?? 0) <= 14 }),
+                ("d3", L("Дни 15–28", "Days 15–28"), { ($0.cycleDay ?? 0) >= 15 && ($0.cycleDay ?? 0) <= 28 }),
+                ("d4", L("День 29+", "Day 29+"), { ($0.cycleDay ?? 0) >= 29 }),
+                ("unknown", L("Цикл не отмечен", "Cycle not marked"), { $0.cycleDay == nil })
+            ]
+        case "food":
+            return [
+                ("food", L("Дни с едой", "Days with food"), { $0.hasFood }),
+                ("none", L("Дни без еды", "Days without food"), { !$0.hasFood })
+            ]
+        case "impulse":
+            return [
+                ("marked", L("Дни с отметкой импульса", "Days with an impulse mark"), { $0.impulseCount > 0 }),
+                ("unmarked", L("Дни без таких отметок", "Days without those marks"), { $0.impulseCount == 0 })
+            ]
+        case "sessionType":
+            return [
+                ("rest", L("Отдых", "Rest"), { ($0.durationByType[SessionType.rest.rawValue] ?? 0) > 0 }),
+                ("work", L("Обязательная работа", "Obligatory work"), { ($0.durationByType[SessionType.obligatoryWork.rawValue] ?? 0) > 0 }),
+                ("study", L("Учёба", "Study"), { ($0.durationByType[SessionType.study.rawValue] ?? 0) > 0 }),
+                ("untyped", SessionType.unassignedLabel, { ($0.durationByType["unassigned"] ?? 0) > 0 })
+            ]
+        case "emotion":
+            return Emotion.allCases.map { emotion in
+                (emotion.rawValue, emotion.label, { $0.emotions.contains(emotion.rawValue) })
             }
-            Text("\(stats.checkInCount) check-ins")
-                .font(.lora(11))
-                .foregroundStyle(AppTheme.inkSoft)
+        case "factor":
+            let category = factorCategory ?? snapshot.factors.first?.categoryID
+            let options = snapshot.factors.filter { $0.categoryID == category }
+            return options.map { option in
+                (option.id, Ldata(option.optionName), { $0.factorKeys.contains(option.id) })
+            }
+        default:
+            return [
+                ("lowQ", L("Качество сна ≤ 2", "Sleep quality ≤ 2"), { ($0.sleepQuality ?? 3) <= 2 }),
+                ("highQ", L("Качество сна ≥ 4", "Sleep quality ≥ 4"), { ($0.sleepQuality ?? 3) >= 4 })
+            ]
         }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Manual combination
-
-private struct CombinationView: View {
-    let categories: [FactorCategory]
-    let sessions: [FocusSession]
-
-    @State private var selection: [FactorCategory: FactorOption] = [:]
-    @State private var showPicker = false
-
-    private var pairs: [(category: FactorCategory, option: FactorOption)] {
-        selection.map { ($0.key, $0.value) }
     }
 
-    var body: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                ConditionsSummaryView(
-                    title: L("Условия комбинации", "Combination conditions"),
-                    chips: selection.map { ConditionChip(category: $0.key, option: $0.value) },
-                    actionTitle: selection.isEmpty ? L("+ Добавить условие", "+ Add condition") : L("Изменить", "Change"),
-                    onTap: { showPicker = true }
-                )
-            }
-            .padding(18)
-            .parchmentCard()
+    private func format(_ value: Double?) -> String {
+        let durationKeys: Set<String> = ["rest", "work", "study"]
+        if durationKeys.contains(outcome) {
+            return analyticsDuration(value.map { $0 * 3600 })
+        }
+        return analyticsFormat(value)
+    }
 
-            if !pairs.isEmpty {
-                let stats = AnalyticsService.combinationStatistics(selections: pairs, sessions: sessions)
-                VStack(spacing: 8) {
-                    Text(Ldata(stats.optionName))
-                        .font(.lora(16, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                        .multilineTextAlignment(.center)
-                    if stats.hasEnoughData, let avg = stats.averageMood {
-                        Text(String(format: "%.1f / 5", avg))
-                            .font(.lora(26, weight: .semibold))
-                            .foregroundStyle(AppTheme.forest)
-                        Text("\(stats.checkInCount) check-ins")
-                            .font(.lora(12))
-                            .foregroundStyle(AppTheme.inkSoft)
-                        if let minutes = stats.averageMinutesToDifficult {
-                            Text(L("Среднее время до 🥲: \(Int(minutes)) мин", "Avg. time until 🥲: \(Int(minutes)) min"))
-                                .font(.lora(12))
-                                .foregroundStyle(AppTheme.inkSoft)
+    private func picker(_ title: String, options: [(key: String, title: String)], selection: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.lora(13, weight: .medium)).foregroundStyle(AppTheme.inkSoft)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(options, id: \.key) { item in
+                        let on = selection.wrappedValue == item.key
+                        Button { selection.wrappedValue = item.key } label: {
+                            Text(item.title)
+                                .font(.lora(12, weight: on ? .semibold : .regular))
+                                .foregroundStyle(on ? AppTheme.parchmentCard : AppTheme.ink)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(on ? AppTheme.forest : AppTheme.chipFill))
                         }
-                    } else {
-                        Text(L("\(stats.checkInCount) check-ins — недостаточно данных", "\(stats.checkInCount) check-ins — not enough data"))
-                            .font(.lora(13))
-                            .foregroundStyle(AppTheme.inkSoft)
+                        .buttonStyle(.plain)
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(18)
-                .parchmentCard()
             }
         }
-        .sheet(isPresented: $showPicker) {
-            ConditionsPickerSheet(selection: $selection)
-        }
+        .padding(14)
+        .parchmentCard()
     }
 }

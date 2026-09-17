@@ -94,7 +94,7 @@ struct ScaleStepPickerRow<Step: ScaleStep>: View {
                         .frame(maxWidth: .infinity)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(isSelected ? accentColor.opacity(0.18) : AppTheme.parchment.opacity(0.5))
+                                .fill(isSelected ? accentColor.opacity(0.18) : AppTheme.chipFill)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)

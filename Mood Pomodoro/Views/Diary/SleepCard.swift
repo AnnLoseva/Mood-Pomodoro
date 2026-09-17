@@ -206,7 +206,7 @@ struct SleepStageBar: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(AppTheme.parchment.opacity(0.55))
+                        .fill(AppTheme.chipFill)
                     ForEach(intervals, id: \.self) { interval in
                         let offset = interval.start.timeIntervalSince(start) / span * proxy.size.width
                         let width = interval.duration / span * proxy.size.width

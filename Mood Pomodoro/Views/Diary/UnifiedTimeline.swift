@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import Charts
 
 /// Raw hex tones from the new unified-graph design that don't already have
@@ -17,107 +16,7 @@ private enum ChartPalette {
     static let dashLine = Color(red: 0.875, green: 0.824, blue: 0.698)    // #DFD2B2
 }
 
-/// One mark on the shared clock. Numeric points carry a 1–5 value; intervals
-/// carry an end; events carry neither and are drawn as markers. Pills and
-/// cycle never become marks — they have no exact time, so they live on the
-/// context ribbon instead of a fake hour.
-private struct TimelineMark: Identifiable {
-    let id: String
-    let date: Date
-    var end: Date?
-    let layer: TimelineLayer
-    let title: String
-    var value: Double?
-    var color: Color = AppTheme.forest
-    var target: DiaryEditTarget?
-    /// Vertical slot inside the events lane, 0...1 (top to bottom).
-    var eventPosition: Double = 0.5
-    /// Art asset for the event marker (emotion/food), if any.
-    var art: String?
-}
 
-private enum TimelineLayer: String, CaseIterable, Identifiable {
-    case mood, energy, motivation, hunger, appetite
-    case sleep, activity
-    case emotion, food, impulse
-    case context
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .mood: return L("Настроение", "Mood")
-        case .energy: return L("Энергия", "Energy")
-        case .motivation: return L("Мотивация", "Motivation")
-        case .hunger: return L("Голод", "Hunger")
-        case .appetite: return L("Аппетит", "Appetite")
-        case .sleep: return L("Сон", "Sleep")
-        case .activity: return L("Занятия", "Activities")
-        case .emotion: return L("Эмоции", "Emotions")
-        case .food: return L("Еда", "Food")
-        case .impulse: return L("Импульсы", "Impulses")
-        case .context: return L("Таблетки и цикл", "Medication and cycle")
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .mood: return DayScaleMetric.mood.color
-        case .energy: return DayScaleMetric.energy.color
-        case .motivation: return DayScaleMetric.motivation.color
-        case .hunger: return DayScaleMetric.hunger.color
-        case .appetite: return DayScaleMetric.appetite.color
-        case .sleep: return Color(red: 0.32, green: 0.40, blue: 0.55)
-        case .activity: return AppTheme.forest
-        case .emotion: return Color(red: 0.494, green: 0.376, blue: 0.604)
-        case .food: return AppTheme.moss
-        case .impulse: return AppTheme.rust
-        case .context: return Color(red: 0.541, green: 0.455, blue: 0.349)
-        }
-    }
-
-    /// A darker shade of `color`, for text/labels that sit on a tinted chip
-    /// or need to stay legible over the parchment background.
-    var textColor: Color {
-        switch self {
-        case .mood: return AppTheme.forestDeep
-        case .energy: return Color(red: 0.541, green: 0.416, blue: 0.031)
-        case .motivation: return Color(red: 0.588, green: 0.161, blue: 0.122)
-        case .hunger: return Color(red: 0.173, green: 0.396, blue: 0.380)
-        case .appetite: return Color(red: 0.588, green: 0.282, blue: 0.165)
-        case .sleep: return Color(red: 0.235, green: 0.298, blue: 0.431)
-        case .activity: return AppTheme.forestDeep
-        case .emotion: return Color(red: 0.373, green: 0.275, blue: 0.463)
-        case .food: return Color(red: 0.353, green: 0.404, blue: 0.251)
-        case .impulse: return AppTheme.rustDeep
-        case .context: return Color(red: 0.420, green: 0.345, blue: 0.251)
-        }
-    }
-
-    var isNumeric: Bool {
-        switch self {
-        case .mood, .energy, .motivation, .hunger, .appetite: return true
-        default: return false
-        }
-    }
-
-    var isInterval: Bool { self == .sleep || self == .activity }
-    var isEvent: Bool { self == .emotion || self == .food || self == .impulse }
-
-    /// Row inside the events lane, top to bottom — matches the new design's
-    /// fixed rows (Эмоции / Еда / Импульсы).
-    var eventRowFraction: Double {
-        switch self {
-        case .emotion: return 0.2
-        case .food: return 0.5
-        case .impulse: return 0.8
-        default: return 0.5
-        }
-    }
-
-    static let numericLayers: [TimelineLayer] = [.mood, .energy, .motivation, .hunger, .appetite]
-    static let defaultOn: Set<String> = ["mood", "sleep", "food"]
-}
 
 /// The quick-pick layer combinations from the new design's "пресеты" row.
 private struct TimelinePreset: Identifiable {
@@ -132,25 +31,6 @@ private struct TimelinePreset: Identifiable {
         TimelinePreset(key: "food", title: L("Еда и голод", "Food & hunger"), layers: ["hunger", "appetite", "mood", "food", "impulse"]),
         TimelinePreset(key: "rest", title: L("Сон и силы", "Sleep & energy"), layers: ["energy", "mood", "sleep", "activity", "context"])
     ]
-}
-
-private enum TimelineSpan: String, CaseIterable, Identifiable {
-    case day, week, month
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .day: return L("День", "Day")
-        case .week: return L("Неделя", "Week")
-        case .month: return L("Месяц", "Month")
-        }
-    }
-    var calendarComponent: Calendar.Component {
-        switch self {
-        case .day: return .day
-        case .week: return .weekOfYear
-        case .month: return .month
-        }
-    }
 }
 
 /// Fixed pixel geometry for the unified plot, computed once per draw from
@@ -222,23 +102,13 @@ private struct ChartLayout {
 /// like a continuous line.
 struct UnifiedTimeline: View {
     let date: Date
-    let suggestedPeriod: Calendar.Component
+    let snapshot: TimelineSnapshot
+    @Binding var span: TimelineSpan
     let onEdit: (DiaryEditTarget, Date) -> Void
-
-    @Query private var checkIns: [CheckIn]
-    @Query private var sessions: [FocusSession]
-    @Query private var food: [FoodEntry]
-    @Query private var hunger: [HungerEntry]
-    @Query private var emotions: [EmotionEntry]
-    @Query private var impulses: [ImpulseEntry]
-    @Query private var support: [SupportEntry]
-    @Query private var cycle: [CycleEntry]
-    @Environment(SleepStore.self) private var sleep
 
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("diary.timeline.layers") private var layersRaw = "mood,sleep,food"
     @AppStorage("diary.timeline.preset") private var presetKeyRaw = ""
-    @State private var span: TimelineSpan
     @State private var isSelecting = false
     @State private var cursor: Date?
     @State private var rangeSelection: ClosedRange<Date>?
@@ -257,17 +127,16 @@ struct UnifiedTimeline: View {
     private static let minimumSpan: TimeInterval = 15 * 60
     private static let connectGap: TimeInterval = 90 * 60
 
-    init(date: Date, period: Calendar.Component, onEdit: @escaping (DiaryEditTarget, Date) -> Void) {
+    init(
+        date: Date,
+        snapshot: TimelineSnapshot,
+        span: Binding<TimelineSpan>,
+        onEdit: @escaping (DiaryEditTarget, Date) -> Void
+    ) {
         self.date = date
-        self.suggestedPeriod = period
+        self.snapshot = snapshot
+        self._span = span
         self.onEdit = onEdit
-        let initial: TimelineSpan
-        switch period {
-        case .month: initial = .month
-        case .weekOfYear, .weekOfMonth: initial = .week
-        default: initial = .day
-        }
-        _span = State(initialValue: initial)
     }
 
     // MARK: - Layers & presets
@@ -312,14 +181,6 @@ struct UnifiedTimeline: View {
     }
 
     private var domain: ClosedRange<Date> { interval.start...interval.end }
-
-    private func overlaps(_ start: Date, _ end: Date) -> Bool {
-        start < interval.end && end > interval.start
-    }
-
-    private func within(_ time: Date) -> Bool {
-        time >= interval.start && time < interval.end
-    }
 
     private var fullSpan: TimeInterval { domain.upperBound.timeIntervalSince(domain.lowerBound) }
     private var visibleLength: TimeInterval { min(visibleSpan ?? fullSpan, fullSpan) }
@@ -388,118 +249,10 @@ struct UnifiedTimeline: View {
         selectedMark = nil
     }
 
-    // MARK: - Marks
+    // MARK: - Marks (from the prepared snapshot; pan/zoom only filters)
 
     private var marks: [TimelineMark] {
-        var result: [TimelineMark] = []
-        for entry in checkIns where within(entry.timestamp) {
-            if isOn(.mood) {
-                result.append(TimelineMark(
-                    id: "\(entry.id)-mood", date: entry.timestamp, layer: .mood,
-                    title: DayMetric.mood.title + " · \(Int(entry.mood.scale))/5",
-                    value: entry.mood.scale, color: DayMetric.mood.color, target: .checkIn(entry.id)
-                ))
-            }
-            if isOn(.energy), let value = entry.energy?.scale {
-                result.append(TimelineMark(
-                    id: "\(entry.id)-energy", date: entry.timestamp, layer: .energy,
-                    title: DayMetric.energy.title + " · \(Int(value))/5",
-                    value: value, color: DayMetric.energy.color, target: .checkIn(entry.id)
-                ))
-            }
-            if isOn(.motivation), let value = entry.motivation?.scale {
-                result.append(TimelineMark(
-                    id: "\(entry.id)-motivation", date: entry.timestamp, layer: .motivation,
-                    title: DayMetric.motivation.title + " · \(Int(value))/5",
-                    value: value, color: DayMetric.motivation.color, target: .checkIn(entry.id)
-                ))
-            }
-        }
-        for entry in hunger where within(entry.eventDate) {
-            if isOn(.hunger), let value = entry.hunger?.scale {
-                result.append(TimelineMark(
-                    id: "h\(entry.id)", date: entry.eventDate, layer: .hunger,
-                    title: L("Голод", "Hunger") + " · \(Int(value))/5",
-                    value: value, color: DayScaleMetric.hunger.color, target: .hunger(entry.id)
-                ))
-            }
-            if isOn(.appetite), let value = entry.appetite?.scale {
-                result.append(TimelineMark(
-                    id: "a\(entry.id)", date: entry.eventDate, layer: .appetite,
-                    title: L("Аппетит", "Appetite") + " · \(Int(value))/5",
-                    value: value, color: DayScaleMetric.appetite.color, target: .hunger(entry.id)
-                ))
-            }
-        }
-        if isOn(.food) {
-            for entry in food where within(entry.eventDate) {
-                result.append(TimelineMark(
-                    id: "food-\(entry.id)", date: entry.eventDate, layer: .food,
-                    title: "\(entry.category.emoji) \(entry.category.label)",
-                    color: foodColor(entry.category), target: .food(entry.id),
-                    eventPosition: TimelineLayer.food.eventRowFraction, art: entry.category.imageName
-                ))
-            }
-        }
-        if isOn(.emotion) {
-            for entry in emotions where within(entry.eventDate) {
-                for emotion in entry.emotions {
-                    result.append(TimelineMark(
-                        id: "\(entry.id)-\(emotion.rawValue)", date: entry.eventDate, layer: .emotion,
-                        title: "\(emotion.emoji) \(emotion.label)",
-                        color: emotion.color, target: .emotion(entry.id),
-                        eventPosition: TimelineLayer.emotion.eventRowFraction, art: emotion.imageName
-                    ))
-                }
-            }
-        }
-        if isOn(.impulse) {
-            for entry in impulses where within(entry.eventDate) {
-                let extra = entry.detailLine
-                result.append(TimelineMark(
-                    id: "imp-\(entry.id)", date: entry.eventDate, layer: .impulse,
-                    title: extra.isEmpty
-                        ? "\(entry.category.emoji) \(entry.category.label)"
-                        : "\(entry.category.emoji) \(entry.category.label) · \(extra)",
-                    color: AppTheme.rust, target: .impulse(entry.id), eventPosition: TimelineLayer.impulse.eventRowFraction
-                ))
-            }
-        }
-        if isOn(.sleep) {
-            for entry in sleep.sessions where !entry.isSuperseded && overlaps(entry.start, entry.end) {
-                result.append(TimelineMark(
-                    id: "sleep-\(entry.id)", date: entry.start, end: entry.end, layer: .sleep,
-                    title: entry.kind.emoji + " " + entry.kind.label + " · " + DurationFormatting.compact(entry.totalSleep)
-                        + (entry.quality.map { " · " + $0.label } ?? ""),
-                    color: entry.kind == .night
-                        ? Color(red: 0.32, green: 0.40, blue: 0.55)
-                        : Color(red: 0.55, green: 0.62, blue: 0.45),
-                    target: .sleep(entry.id)
-                ))
-            }
-        }
-        if isOn(.activity) {
-            for session in sessions {
-                for segment in session.segments ?? [] where segment.type == .work && overlaps(segment.startDate, segment.endDate ?? .now) {
-                    result.append(TimelineMark(
-                        id: "seg-\(segment.id)", date: segment.startDate, end: segment.endDate ?? .now,
-                        layer: .activity,
-                        title: Ldata(session.activity) + " · " + SessionType.label(for: session.sessionType),
-                        color: SessionType.color(for: session.sessionType),
-                        target: .session(session.id)
-                    ))
-                }
-            }
-        }
-        return result.sorted { $0.date < $1.date }
-    }
-
-    private func foodColor(_ category: FoodCategory) -> Color {
-        switch category {
-        case .healthy: return AppTheme.moss
-        case .regular: return AppTheme.forest
-        case .treat: return AppTheme.rust
-        }
+        snapshot.marks.filter { isOn($0.layer) }
     }
 
     private var numericPoints: [TimelineMark] { marks.filter { $0.layer.isNumeric && $0.value != nil } }
@@ -507,18 +260,7 @@ struct UnifiedTimeline: View {
     private var bandMarks: [TimelineMark] { marks.filter(\.layer.isInterval) }
 
     private func numericGroups(for layer: TimelineLayer) -> [[TimelineMark]] {
-        let pts = numericPoints.filter { $0.layer == layer }.sorted { $0.date < $1.date }
-        var out: [[TimelineMark]] = []
-        var current: [TimelineMark] = []
-        for (i, p) in pts.enumerated() {
-            if i > 0, p.date.timeIntervalSince(pts[i - 1].date) > Self.connectGap {
-                out.append(current)
-                current = []
-            }
-            current.append(p)
-        }
-        if !current.isEmpty { out.append(current) }
-        return out
+        snapshot.numericGroups[layer] ?? []
     }
 
     private func valueAt(_ layer: TimelineLayer, _ time: Date, snap: Bool = false) -> Double? {
@@ -543,21 +285,7 @@ struct UnifiedTimeline: View {
         return nil
     }
 
-    private var contextDays: [DayAggregate] {
-        AnalyticsService.dayAggregates(
-            in: interval,
-            checkIns: checkIns,
-            sessions: sessions,
-            hungerEntries: hunger,
-            foodEntries: food,
-            emotionEntries: emotions,
-            impulseEntries: impulses,
-            supportEntries: support,
-            cycleMarks: cycle.map(\.mark) + sleep.cycleMarks,
-            healthMedication: sleep.medicationDays,
-            sleepSessions: sleep.sessions
-        )
-    }
+    private var contextDays: [DayAggregate] { snapshot.contextDays }
 
     // MARK: - Body
 
@@ -588,14 +316,6 @@ struct UnifiedTimeline: View {
         .padding(isCompact ? 12 : 18)
         .parchmentCard(padding: 0)
         .preference(key: TimelineBlocksScrollKey.self, value: isSelecting)
-        .onChange(of: suggestedPeriod) { _, new in
-            switch new {
-            case .month: span = .month
-            case .weekOfYear, .weekOfMonth: span = .week
-            default: span = .day
-            }
-            clearSelection()
-        }
         .onChange(of: date) { _, _ in clearSelection() }
         .onChange(of: span) { _, _ in clearSelection() }
     }

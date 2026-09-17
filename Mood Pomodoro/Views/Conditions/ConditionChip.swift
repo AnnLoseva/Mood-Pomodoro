@@ -81,7 +81,7 @@ struct ConditionsSummaryView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
-                            Capsule(style: .continuous).fill(AppTheme.parchment.opacity(0.6))
+                            Capsule(style: .continuous).fill(AppTheme.chipFill)
                         )
                         .overlay(Capsule(style: .continuous).stroke(AppTheme.border, lineWidth: 1))
                     }

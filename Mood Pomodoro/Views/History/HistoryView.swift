@@ -8,6 +8,7 @@ import SwiftData
 
 struct HistoryView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(\.iPadSidebarHidden) private var iPadSidebarHidden
     @Query(sort: \FocusSession.startDate, order: .reverse) private var sessions: [FocusSession]
 
     private var finishedSessions: [FocusSession] {
@@ -47,7 +48,7 @@ struct HistoryView: View {
                     .padding(.horizontal, 32)
                 } else {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
+                        LazyVStack(alignment: .leading, spacing: 22) {
                             ForEach(sections) { section in
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(section.title)
@@ -72,18 +73,15 @@ struct HistoryView: View {
                             }
                         }
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
+                    .safeAreaPadding(.top, 4)
+                    .padding(.leading, iPadSidebarHidden ? 40 : 0)
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(L("История", "History"))
-                        .font(.lora(17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                }
-            }
+            .hideRootNavigationBar()
+            .goblinChrome()
             .navigationDestination(for: UUID.self) { id in
                 if let session = sessions.first(where: { $0.id == id }) {
                     SessionDetailView(session: session)

@@ -32,6 +32,7 @@ final class SleepStore {
     private let container: ModelContainer
     private let context: ModelContext
     private let health = HealthKitSleepService()
+    private let coalescer = RefreshCoalescer()
 
     /// Every cached session, newest first. The one thing the UI reads.
     private(set) var sessions: [SleepSessionSummary] = []
@@ -69,21 +70,31 @@ final class SleepStore {
 
     func reload() {
         let descriptor = FetchDescriptor<SleepRecord>(sortBy: [SortDescriptor(\.startDate, order: .reverse)])
-        // Overlaps are resolved once, here, so every reader — the day card,
-        // the month, the overall chart, analytics — sees the same
-        // non-double-counted answer. See `resolveOverlaps(sessions:)`.
-        sessions = SleepAggregationService.resolveOverlaps(
+        let resolved = SleepAggregationService.resolveOverlaps(
             sessions: ((try? context.fetch(descriptor)) ?? []).map(\.summary)
         )
+        if resolved != sessions { sessions = resolved }
 
         let cycle = FetchDescriptor<HealthCycleDay>(sortBy: [SortDescriptor(\.day)])
-        cycleMarks = ((try? context.fetch(cycle)) ?? []).compactMap(\.mark)
+        let newMarks = ((try? context.fetch(cycle)) ?? []).compactMap(\.mark)
+        if newMarks != cycleMarks { cycleMarks = newMarks }
 
         let medication = FetchDescriptor<HealthMedicationDay>(sortBy: [SortDescriptor(\.day)])
-        medicationDays = Dictionary(
-            ((try? context.fetch(medication)) ?? []).map { ($0.day, $0) },
-            uniquingKeysWith: { _, newest in newest }
-        )
+        let records = (try? context.fetch(medication)) ?? []
+        let newMeds = Dictionary(records.map { ($0.day, $0) }, uniquingKeysWith: { _, newest in newest })
+        if !medicationMapsEqual(medicationDays, newMeds) {
+            medicationDays = newMeds
+        }
+    }
+
+    private func medicationMapsEqual(_ a: [Date: HealthMedicationDay], _ b: [Date: HealthMedicationDay]) -> Bool {
+        guard a.count == b.count else { return false }
+        for (day, record) in a {
+            guard let other = b[day],
+                  record.takenCount == other.takenCount,
+                  record.skippedCount == other.skippedCount else { return false }
+        }
+        return true
     }
 
     /// Health's medication answer for a day, if it has one. The caller
@@ -104,8 +115,35 @@ final class SleepStore {
         return SleepDaySummary(day: day, sessions: matching)
     }
 
+    func exportHealthCycleDays() -> [ExportHealthCycleCapture] {
+        let descriptor = FetchDescriptor<HealthCycleDay>(sortBy: [SortDescriptor(\.day)])
+        return ((try? context.fetch(descriptor)) ?? []).compactMap { record in
+            guard let mark = record.mark else { return nil }
+            return ExportHealthCycleCapture(
+                day: record.day,
+                kind: mark.kind,
+                flow: record.flow,
+                isCycleStart: record.isCycleStart,
+                sourceName: record.sourceName
+            )
+        }
+    }
+
+    func exportHealthMedicationDays() -> [ExportHealthMedCapture] {
+        medicationDays.values.map {
+            ExportHealthMedCapture(
+                day: $0.day,
+                takenCount: $0.takenCount,
+                skippedCount: $0.skippedCount,
+                status: $0.status,
+                detail: $0.detail,
+                sourceName: $0.sourceName
+            )
+        }
+    }
+
     func sessions(in interval: DateInterval) -> [SleepSessionSummary] {
-        sessions.filter { interval.contains($0.day) }.sorted { $0.start < $1.start }
+        sessions.filter { $0.start < interval.end && $0.end > interval.start }.sorted { $0.start < $1.start }
     }
 
     // MARK: - Import
@@ -148,6 +186,7 @@ final class SleepStore {
         guard isHealthKitEnabled, isHealthKitAvailable, !isImporting else { return }
         isImporting = true
         defer { isImporting = false }
+        PerfSignpost.event("health.importInitial")
 
         let end = Date.now
         guard let start = Calendar.current.date(byAdding: .day, value: -Self.initialImportDays, to: end) else { return }
@@ -188,10 +227,37 @@ final class SleepStore {
         day: (Model) -> Date
     ) {
         let existing = (try? context.fetch(FetchDescriptor<Model>())) ?? []
-        for record in existing where interval.contains(day(record)) {
+        let inWindow = existing.filter { interval.contains(day($0)) }
+        if Model.self == HealthCycleDay.self,
+           let current = inWindow as? [HealthCycleDay],
+           let incoming = fresh as? [HealthCycleDay],
+           cycleWindowsMatch(current, incoming) {
+            return
+        }
+        if Model.self == HealthMedicationDay.self,
+           let current = inWindow as? [HealthMedicationDay],
+           let incoming = fresh as? [HealthMedicationDay],
+           medicationWindowsMatch(current, incoming) {
+            return
+        }
+        for record in inWindow {
             context.delete(record)
         }
         for record in fresh { context.insert(record) }
+    }
+
+    private func cycleWindowsMatch(_ current: [HealthCycleDay], _ incoming: [HealthCycleDay]) -> Bool {
+        guard current.count == incoming.count else { return false }
+        let currentKeys = Set(current.map { "\($0.day.timeIntervalSinceReferenceDate)|\($0.flowRaw)|\($0.isCycleStart)" })
+        let incomingKeys = Set(incoming.map { "\($0.day.timeIntervalSinceReferenceDate)|\($0.flowRaw)|\($0.isCycleStart)" })
+        return currentKeys == incomingKeys
+    }
+
+    private func medicationWindowsMatch(_ current: [HealthMedicationDay], _ incoming: [HealthMedicationDay]) -> Bool {
+        guard current.count == incoming.count else { return false }
+        let currentKeys = Set(current.map { "\($0.day.timeIntervalSinceReferenceDate)|\($0.takenCount)|\($0.skippedCount)" })
+        let incomingKeys = Set(incoming.map { "\($0.day.timeIntervalSinceReferenceDate)|\($0.takenCount)|\($0.skippedCount)" })
+        return currentKeys == incomingKeys
     }
 
     /// The cheap path, for a foreground return or a background nudge: ask
@@ -202,15 +268,18 @@ final class SleepStore {
     /// changed sample may belong to a night whose other samples did not
     /// change at all.
     func refresh() async {
+        guard isHealthKitEnabled, isHealthKitAvailable else { return }
+        await coalescer.run { [weak self] in
+            await self?.refreshOnce()
+        }
+    }
+
+    private func refreshOnce() async {
         guard isHealthKitEnabled, isHealthKitAvailable, !isImporting else { return }
-        // Cycle and medication are whole-day records with no anchor of their
-        // own, so they are re-read every time rather than gated on the sleep
-        // anchor: a day logged only in Cycle Tracking produces no sleep
-        // change at all, and gating this on one would never import it.
+        PerfSignpost.event("health.refresh")
         await importRecentDayRecords()
         do {
             guard let changes = try await health.changes() else {
-                // No anchor yet — nothing has been imported on this device.
                 await importInitialHistory()
                 return
             }
@@ -218,9 +287,6 @@ final class SleepStore {
                 lastImportedAt = .now
                 return
             }
-            // Deletions carry no dates, so any deletion means the safest
-            // thing is to rebuild the window rather than guess which night
-            // vanished.
             guard changes.deletedCount == 0 else {
                 await rebuild()
                 return
@@ -424,7 +490,7 @@ final class SleepStore {
     func startObserving() {
         guard isHealthKitEnabled, isHealthKitAvailable else { return }
         health.startObserving { [weak self] in
-            Task { @MainActor in await self?.refresh() }
+            Task { await self?.refresh() }
         }
     }
 

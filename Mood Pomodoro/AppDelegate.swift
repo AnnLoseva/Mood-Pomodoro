@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        AppChrome.apply()
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
         NotificationScheduler.registerCategories(reasons: ReasonsStore.shared.moodReasons)
         return true

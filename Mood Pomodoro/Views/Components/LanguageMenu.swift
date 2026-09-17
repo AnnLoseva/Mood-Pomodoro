@@ -27,7 +27,7 @@ struct LanguageMenu: View {
         } label: {
             Image(systemName: "globe")
                 .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(AppTheme.forest)
+                .foregroundStyle(AppTheme.forestDeep)
         }
         .accessibilityLabel(L("Язык", "Language"))
     }

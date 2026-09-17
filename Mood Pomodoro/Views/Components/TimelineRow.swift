@@ -23,7 +23,7 @@ enum TimelineEventKind: String {
 }
 
 /// Which record a diary timeline row opens for editing, if any.
-enum DiaryEditTarget: Hashable {
+enum DiaryEditTarget: Hashable, Sendable {
     case session(UUID)
     case checkIn(UUID)
     case support(Date)

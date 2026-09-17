@@ -1,8 +1,3 @@
-//
-//  ExportSheet.swift
-//  Mood Pomodoro
-//
-
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
@@ -52,13 +47,21 @@ struct ExportSheet: View {
     @State private var includeCycle = true
     @State private var includeSupport = true
     @State private var includeFood = true
+    @State private var includeHealth = false
+    @State private var showHealthWarning = false
     @State private var copied = false
+    @State private var preparedText = ""
+    @State private var preparedName = "mood-diary.md"
+    @State private var isPreparing = false
+    @State private var prepareError: String?
+    @State private var recordCount = 0
+    @State private var prepareGeneration = 0
 
     private let calendar = Calendar.current
 
     private var input: ExportInput {
         ExportInput(
-            sessions: sessions.filter { !$0.isActive },
+            sessions: sessions,
             checkIns: checkIns,
             cycleEntries: cycleEntries,
             supportEntries: supportEntries,
@@ -68,7 +71,9 @@ struct ExportSheet: View {
             hungerEntries: hungerEntries,
             emotionEntries: emotionEntries,
             impulseEntries: impulseEntries,
-            manualSleep: sleepStore.sessions.filter { $0.source == .manual }
+            sleep: sleepStore.sessions,
+            healthCycleDays: sleepStore.exportHealthCycleDays(),
+            healthMedication: sleepStore.exportHealthMedicationDays()
         )
     }
 
@@ -102,15 +107,27 @@ struct ExportSheet: View {
             includeNotes: includeNotes,
             includeCycle: includeCycle,
             includeSupport: includeSupport,
-            includeFood: includeFood
+            includeFood: includeFood,
+            includeHealth: includeHealth
         )
     }
 
-    var body: some View {
-        let options = options
-        let text = DiaryExporter.export(input, options: options, calendar: calendar)
-        let fileName = DiaryExporter.fileName(for: options, calendar: calendar)
+    private var exportFingerprint: String {
+        "\(period.rawValue)|\(customStart.timeIntervalSince1970)|\(customEnd.timeIntervalSince1970)|\(language.rawValue)|\(format.rawValue)|\(includeAIPrompt)|\(includeNotes)|\(includeCycle)|\(includeSupport)|\(includeFood)|\(includeHealth)|\(sessions.count)|\(checkIns.count)|\(foodEntries.count)|\(emotionEntries.count)|\(impulseEntries.count)|\(sleepStore.sessions.count)"
+    }
 
+    private var excludedSummary: String {
+        var items: [String] = []
+        if !includeNotes { items.append(L("заметки", "notes")) }
+        if !includeCycle { items.append(L("цикл", "cycle")) }
+        if !includeSupport { items.append(L("поддержка", "support")) }
+        if !includeFood { items.append(L("еда и голод", "food and hunger")) }
+        if !includeHealth { items.append(L("данные Apple Health", "Apple Health data")) }
+        if items.isEmpty { return L("Ничего не исключено.", "Nothing is excluded.") }
+        return L("Исключено: ", "Excluded: ") + items.joined(separator: ", ")
+    }
+
+    var body: some View {
         NavigationStack {
             ZStack {
                 AppTheme.parchmentCard.ignoresSafeArea()
@@ -156,12 +173,37 @@ struct ExportSheet: View {
                                 toggle(L("Цикл", "Cycle"), isOn: $includeCycle)
                                 toggle(L("Ежедневную поддержку", "Daily support"), isOn: $includeSupport)
                                 toggle(L("Еду, голод и аппетит", "Food, hunger and appetite"), isOn: $includeFood)
+                                Toggle(L("Включить данные Apple Health", "Include Apple Health data"), isOn: healthToggle)
+                                    .font(.lora(15))
+                                    .foregroundStyle(AppTheme.ink)
+                                    .tint(AppTheme.forest)
+                            }
+                        }
+
+                        DiaryFormSection(L("Состав файла", "What's in the file")) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(isPreparing
+                                     ? L("Готовлю файл…", "Preparing the file…")
+                                     : L("Записей в файле: \(recordCount)", "Records in the file: \(recordCount)"))
+                                    .font(.lora(13))
+                                    .foregroundStyle(AppTheme.ink)
+                                Text(L("Примерный размер: \(byteCount)", "Approximate size: \(byteCount)"))
+                                    .font(.lora(13))
+                                    .foregroundStyle(AppTheme.inkSoft)
+                                Text(excludedSummary)
+                                    .font(.lora(13))
+                                    .foregroundStyle(AppTheme.inkSoft)
+                                if let prepareError {
+                                    Text(prepareError)
+                                        .font(.lora(13))
+                                        .foregroundStyle(AppTheme.rustDeep)
+                                }
                             }
                         }
 
                         DiaryFormSection(L("Предпросмотр", "Preview")) {
                             ScrollView {
-                                Text(String(text.prefix(6000)))
+                                Text(String((isPreparing && preparedText.isEmpty ? L("Готовлю файл…", "Preparing the file…") : preparedText).prefix(6000)))
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(AppTheme.ink)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,25 +213,29 @@ struct ExportSheet: View {
                             .frame(height: 260)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(AppTheme.parchment.opacity(0.55))
+                                    .fill(AppTheme.chipFill)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .stroke(AppTheme.border, lineWidth: 1.25)
                             )
+                            Text(L("Предпросмотр сокращён. В файл войдёт полный текст.", "Preview is truncated. The file will contain the full text."))
+                                .font(.lora(12))
+                                .foregroundStyle(AppTheme.inkSoft)
                         }
 
                         VStack(spacing: 10) {
                             ShareLink(
-                                item: ExportDocument(text: text, fileName: fileName, format: format),
-                                preview: SharePreview(fileName)
+                                item: ExportDocument(text: preparedText, fileName: preparedName, format: format),
+                                preview: SharePreview(preparedName)
                             ) {
                                 Label(L("Поделиться файлом", "Share file"), systemImage: "square.and.arrow.up")
                             }
                             .buttonStyle(.goblinPrimary)
+                            .disabled(preparedText.isEmpty || isPreparing)
 
                             Button {
-                                UIPasteboard.general.string = text
+                                UIPasteboard.general.string = preparedText
                                 copied = true
                             } label: {
                                 Label(
@@ -198,6 +244,7 @@ struct ExportSheet: View {
                                 )
                             }
                             .buttonStyle(.goblinSecondary)
+                            .disabled(preparedText.isEmpty || isPreparing)
                         }
 
                         DiaryNote(text: L("В файле — личные данные: настроение, заметки, цикл, поддержка. Отправляй его только туда, где тебе спокойно их хранить.", "The file holds personal data — mood, notes, cycle, support. Only send it somewhere you're comfortable keeping it."))
@@ -205,7 +252,10 @@ struct ExportSheet: View {
                     .padding(20)
                 }
             }
-            .onChange(of: text) { _, _ in copied = false }
+            .onChange(of: preparedText) { _, _ in copied = false }
+            .task(id: exportFingerprint) {
+                await prepareExport()
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(L("Экспорт", "Export"))
@@ -218,8 +268,67 @@ struct ExportSheet: View {
                         .foregroundStyle(AppTheme.forest)
                 }
             }
+            .alert(
+                L("Данные Apple Health", "Apple Health data"),
+                isPresented: $showHealthWarning
+            ) {
+                Button(L("Включить", "Include")) { includeHealth = true }
+                Button(L("Отмена", "Cancel"), role: .cancel) { includeHealth = false }
+            } message: {
+                Text(L("В файл попадут подробные данные сна и цикла из Apple Health: фазы, пробуждения, источник, дни менструации. Файл создаётся только если ты им поделишься. Никуда сам он не отправится.", "The file will include detailed sleep and cycle data from Apple Health: stages, awakenings, source, period days. The file is created only if you share it. It is never sent anywhere by itself."))
+            }
         }
         .presentationDetents([.large])
+        .goblinChrome()
+    }
+
+    private var healthToggle: Binding<Bool> {
+        Binding(
+            get: { includeHealth },
+            set: { newValue in
+                if newValue && !includeHealth {
+                    showHealthWarning = true
+                } else {
+                    includeHealth = newValue
+                }
+            }
+        )
+    }
+
+    private var byteCount: String {
+        let count = preparedText.utf8.count
+        if count < 1024 { return "\(count) B" }
+        if count < 1024 * 1024 { return String(format: "%.1f KB", Double(count) / 1024) }
+        return String(format: "%.1f MB", Double(count) / (1024 * 1024))
+    }
+
+    @MainActor
+    private func prepareExport() async {
+        prepareGeneration += 1
+        let generation = prepareGeneration
+        isPreparing = true
+        prepareError = nil
+        try? await Task.sleep(nanoseconds: 220_000_000)
+        guard generation == prepareGeneration else { return }
+        let current = options
+        let currentInput = input
+        let name = DiaryExporter.fileName(for: current, calendar: calendar)
+        let cal = calendar
+        let document = DiaryExporter.assemble(currentInput, options: current, calendar: cal)
+        let text: String = await Task.detached(priority: .userInitiated) {
+            let signpost: StaticString = current.format == .json ? "export.json" : "export.markdown"
+            return PerfSignpost.interval(signpost) {
+                DiaryExporter.render(document, options: current, calendar: cal)
+            }
+        }.value
+        guard generation == prepareGeneration else { return }
+        preparedText = text
+        preparedName = name
+        recordCount = document.checkIns.count + document.emotions.count + document.hungerAppetite.count
+            + document.food.count + document.impulses.count + document.sessions.count
+            + document.sleep.count + document.notes.count + document.standaloneConditions.count
+            + document.supportEntries.count + document.cycleEntries.count
+        isPreparing = false
     }
 
     private func toggle(_ title: String, isOn: Binding<Bool>) -> some View {

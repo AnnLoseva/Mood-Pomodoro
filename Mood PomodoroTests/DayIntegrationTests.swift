@@ -125,13 +125,14 @@ struct DayIntegrationTests {
         #expect(day.support == .unknown)
     }
     @Test func exportIncludesNewUserRecordsButExcludesImportedSleep() throws {
-        let input = ExportInput(emotionEntries: [EmotionEntry(eventDate: date(3), emotions: [.anxious], note: "secret")], impulseEntries: [ImpulseEntry(eventDate: date(3), category: .purchase)], manualSleep: [sleep(date(2, 23), date(3, 8), .healthKit)])
+        let input = ExportInput(emotionEntries: [EmotionEntry(eventDate: date(3), emotions: [.anxious], note: "secret")], impulseEntries: [ImpulseEntry(eventDate: date(3), category: .purchase)], sleep: [sleep(date(2, 23), date(3, 8), .healthKit)])
         let options = ExportOptions(start: date(1), end: date(4), language: .en, format: .json, includeNotes: false)
         let text = DiaryExporter.export(input, options: options, calendar: calendar)
         let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         #expect((object["emotions"] as? [[String: Any]])?.count == 1)
         #expect((object["impulses"] as? [[String: Any]])?.count == 1)
-        #expect((object["manualSleep"] as? [[String: Any]])?.isEmpty == true)
+        let sleepRows = (object["sleep"] as? [[String: Any]]) ?? []
+        #expect(sleepRows.filter { ($0["source"] as? String) == "healthKit" }.isEmpty)
         #expect(!text.contains("secret"))
     }
     @Test @MainActor func oldUntypedRecordsAndNewRecordsSurviveDiskReopen() throws {

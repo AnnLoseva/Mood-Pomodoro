@@ -132,5 +132,6 @@ struct CycleLogSheet: View {
             }
         }
         .presentationDetents([.large])
+        .goblinChrome()
     }
 }

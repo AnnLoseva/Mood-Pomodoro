@@ -595,9 +595,10 @@ struct DiaryAnalyticsTests {
         let object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let records = try #require(object["checkIns"] as? [[String: Any]])
         #expect(records.count == 1)
-        #expect(records.first?["mood"] as? Int == 2)
-        #expect(records.first?["moodLabel"] as? String == "Bad")
-        #expect(records.first?["time"] as? String == "2024-09-08T22:30:00Z")
-        #expect(records.first?["recordedAt"] as? String != records.first?["time"] as? String)
+        let moodObject = try #require(records.first?["mood"] as? [String: Any])
+        #expect(moodObject["value"] as? Int == 2)
+        #expect(moodObject["label"] as? String == "Bad")
+        #expect(records.first?["eventTime"] as? String == "2024-09-08T22:30:00Z")
+        #expect(records.first?["recordedAt"] as? String != records.first?["eventTime"] as? String)
     }
 }

@@ -36,6 +36,7 @@ struct DiaryMonthView: View {
                     studyCard.frame(maxWidth: .infinity)
                     cycleCard.frame(maxWidth: .infinity)
                 }
+                if !summary.emotionCounts.isEmpty { emotionsCard }
                 if !summary.food.isEmpty { foodCard }
                 if let sleepStats { sleepCard(sleepStats) }
                 if !summary.supportStats.isEmpty { supportCard }
@@ -46,6 +47,7 @@ struct DiaryMonthView: View {
                 calendarCard
                 moodCard
                 studyCard
+                if !summary.emotionCounts.isEmpty { emotionsCard }
                 if !summary.food.isEmpty { foodCard }
                 if let sleepStats { sleepCard(sleepStats) }
                 if !summary.supportStats.isEmpty { supportCard }
@@ -307,6 +309,20 @@ struct DiaryMonthView: View {
                     Divider().background(AppTheme.border)
                     monthChart
                 }
+            }
+        }
+    }
+
+    /// How often each feeling showed up this month — a count of entries,
+    /// never a mood score or a verdict on the month.
+    private var emotionsCard: some View {
+        DiaryCard(title: L("🎭 Эмоции", "🎭 Emotions")) {
+            VStack(alignment: .leading, spacing: 14) {
+                EmotionCountRows(counts: summary.emotionCounts)
+                DiaryNote(text: L(
+                    "Как часто и что ты чувствовала за месяц — счётчик твоих отметок, а не оценка настроения.",
+                    "How often and what you felt this month — a count of your own entries, not a mood score."
+                ))
             }
         }
     }

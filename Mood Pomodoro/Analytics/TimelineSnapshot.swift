@@ -16,7 +16,7 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .mood: return L("Настроение", "Mood")
         case .energy: return L("Энергия", "Energy")
         case .motivation: return L("Мотивация", "Motivation")
-        case .hunger: return L("Голод", "Hunger")
+        case .hunger: return L("Сытость", "Satiety")
         case .appetite: return L("Аппетит", "Appetite")
         case .sleep: return L("Сон", "Sleep")
         case .activity: return L("Занятия", "Activities")
@@ -68,6 +68,21 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
 
     var isInterval: Bool { self == .sleep || self == .activity }
     var isEvent: Bool { self == .emotion || self == .food || self == .impulse }
+
+    /// How far apart two points of this layer can sit and still be drawn as
+    /// one connected line. Mood/energy/motivation come from check-ins during
+    /// sessions, dense enough that a 90-minute gap safely means "different
+    /// moment", not "missing data". Hunger and appetite are logged only
+    /// around meals — a handful of times a day at most — so the same short
+    /// gap would leave every point stranded as an isolated dot. They get a
+    /// day-long gap instead, wide enough to still connect a normal day's
+    /// entries into a line.
+    var connectGap: TimeInterval {
+        switch self {
+        case .hunger, .appetite: return 20 * 3600
+        default: return 90 * 60
+        }
+    }
 
     var eventRowFraction: Double {
         switch self {
@@ -354,13 +369,16 @@ enum TimelineSnapshotBuilder {
 
             for entry in facts.hunger {
                 if let hunger = entry.hunger {
+                    // Drawn inverted, as satiety: the higher the line, the
+                    // fuller the body, not the hungrier.
+                    let satiety = 6 - hunger.scale
                     marks.append(TimelineMark(
                         id: "h\(entry.id.uuidString)",
                         date: entry.eventDate,
                         layer: .hunger,
-                        value: hunger.scale,
+                        value: satiety,
                         target: .hunger(entry.id),
-                        caption: .scale(layer: .hunger, value: Int(hunger.scale))
+                        caption: .scale(layer: .hunger, value: Int(satiety))
                     ))
                 }
                 if let appetite = entry.appetite {
@@ -439,7 +457,7 @@ enum TimelineSnapshotBuilder {
 
             var groups: [TimelineLayer: [[TimelineMark]]] = [:]
             for layer in TimelineLayer.numericLayers {
-                groups[layer] = numericGroups(marks.filter { $0.layer == layer && $0.value != nil })
+                groups[layer] = numericGroups(marks.filter { $0.layer == layer && $0.value != nil }, gap: layer.connectGap)
             }
 
             return TimelineSnapshot(
@@ -452,12 +470,12 @@ enum TimelineSnapshotBuilder {
         }
     }
 
-    static func numericGroups(_ points: [TimelineMark]) -> [[TimelineMark]] {
+    static func numericGroups(_ points: [TimelineMark], gap: TimeInterval = connectGap) -> [[TimelineMark]] {
         let pts = points.sorted { $0.date < $1.date }
         var out: [[TimelineMark]] = []
         var current: [TimelineMark] = []
         for (index, point) in pts.enumerated() {
-            if index > 0, point.date.timeIntervalSince(pts[index - 1].date) > connectGap {
+            if index > 0, point.date.timeIntervalSince(pts[index - 1].date) > gap {
                 out.append(current)
                 current = []
             }

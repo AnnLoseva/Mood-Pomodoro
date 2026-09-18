@@ -141,6 +141,53 @@ struct MoodDistributionRows: View {
     }
 }
 
+/// How often each feeling showed up over a period — "🌞 Счастливая — 12 ·
+/// 8 дней". Bars are sized relative to the most-recorded feeling, not to a
+/// percentage of the period: several emotions can share one moment, so
+/// counts don't sum to a whole the way mood levels do.
+struct EmotionCountRows: View {
+    let counts: [EmotionCount]
+
+    private var maxCount: Int { counts.map(\.count).max() ?? 1 }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(counts) { item in
+                let share = maxCount > 0 ? Double(item.count) / Double(maxCount) : 0
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 10) {
+                        Image(item.emotion.imageName)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 22, height: 22)
+                        Text(item.emotion.label)
+                            .font(.lora(14))
+                            .foregroundStyle(AppTheme.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 8)
+                        Text(countLabel(item.count, ru: ("отметка", "отметки", "отметок"), en: ("time", "times")))
+                            .font(.lora(12))
+                            .foregroundStyle(AppTheme.inkSoft)
+                        Text("· " + countLabel(item.dayCount, ru: ("день", "дня", "дней"), en: ("day", "days")))
+                            .font(.lora(12))
+                            .foregroundStyle(AppTheme.inkSoft)
+                    }
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(AppTheme.border.opacity(0.35))
+                            Capsule()
+                                .fill(item.emotion.color.opacity(0.6))
+                                .frame(width: max(0, proxy.size.width * share))
+                        }
+                    }
+                    .frame(height: 6)
+                }
+            }
+        }
+    }
+}
+
 /// The diary's one way of saying "there isn't enough here yet" — never a
 /// nudge, a streak warning, or a reminder to fill anything in.
 struct DiaryNote: View {

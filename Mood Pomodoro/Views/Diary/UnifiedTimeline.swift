@@ -28,7 +28,7 @@ private struct TimelinePreset: Identifiable {
     static let all: [TimelinePreset] = [
         TimelinePreset(key: "all", title: L("Всё", "Everything"), layers: Set(TimelineLayer.allCases.map(\.rawValue))),
         TimelinePreset(key: "mood", title: L("Настроение", "Mood"), layers: ["mood", "energy", "motivation", "sleep", "activity", "emotion"]),
-        TimelinePreset(key: "food", title: L("Еда и голод", "Food & hunger"), layers: ["hunger", "appetite", "mood", "food", "impulse"]),
+        TimelinePreset(key: "food", title: L("Еда и сытость", "Food & satiety"), layers: ["hunger", "appetite", "mood", "food", "impulse"]),
         TimelinePreset(key: "rest", title: L("Сон и силы", "Sleep & energy"), layers: ["energy", "mood", "sleep", "activity", "context"])
     ]
 }
@@ -125,7 +125,6 @@ struct UnifiedTimeline: View {
 
     private let calendar = Calendar.current
     private static let minimumSpan: TimeInterval = 15 * 60
-    private static let connectGap: TimeInterval = 90 * 60
 
     init(
         date: Date,
@@ -259,21 +258,55 @@ struct UnifiedTimeline: View {
     private var eventPoints: [TimelineMark] { marks.filter(\.layer.isEvent) }
     private var bandMarks: [TimelineMark] { marks.filter(\.layer.isInterval) }
 
+    /// Where each event mark actually draws. Several emotions felt at once
+    /// are one entry recorded at one instant — several marks sharing the
+    /// same layer and timestamp — so left as-is they'd stack exactly on top
+    /// of each other and only the last one drawn would ever be visible or
+    /// tappable. This fans same-moment marks out sideways along their lane
+    /// instead. Shared by drawing and hit-testing so a tap always lands on
+    /// what's actually on screen.
+    private func eventPositions(layout: ChartLayout) -> [(mark: TimelineMark, point: CGPoint)] {
+        let spacing: CGFloat = 22
+        var order: [String] = []
+        var groups: [String: [TimelineMark]] = [:]
+        for mark in eventPoints {
+            let key = "\(mark.layer.rawValue)|\(mark.date.timeIntervalSinceReferenceDate)"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(mark)
+        }
+        var out: [(mark: TimelineMark, point: CGPoint)] = []
+        for key in order {
+            guard let group = groups[key], let first = group.first else { continue }
+            let baseX = layout.x(first.date)
+            let y = layout.eventY(first.layer)
+            let startX = baseX - CGFloat(group.count - 1) * spacing / 2
+            for (index, mark) in group.enumerated() {
+                out.append((mark, CGPoint(x: startX + CGFloat(index) * spacing, y: y)))
+            }
+        }
+        return out
+    }
+
     private func numericGroups(for layer: TimelineLayer) -> [[TimelineMark]] {
         snapshot.numericGroups[layer] ?? []
     }
 
     private func valueAt(_ layer: TimelineLayer, _ time: Date, snap: Bool = false) -> Double? {
-        let pts = numericPoints.filter { $0.layer == layer }.sorted { $0.date < $1.date }
+        // `numericGroups` is already sorted and precomputed once per
+        // snapshot — reusing it here avoids re-filtering and re-sorting the
+        // whole mark list on every call, which mattered a lot since this
+        // runs inside the overlap-detection sweep below on every canvas
+        // redraw (i.e. every frame of a pan/pinch gesture).
+        let pts = numericGroups(for: layer).flatMap { $0 }
         guard !pts.isEmpty else { return nil }
         for (a, b) in zip(pts, pts.dropFirst()) {
             let gap = b.date.timeIntervalSince(a.date)
-            if time >= a.date && time <= b.date, gap > 0, gap <= Self.connectGap {
+            if time >= a.date && time <= b.date, gap > 0, gap <= layer.connectGap {
                 let k = time.timeIntervalSince(a.date) / gap
                 return (a.value ?? 0) + ((b.value ?? 0) - (a.value ?? 0)) * k
             }
         }
-        if let only = pts.first, pts.count == 1, abs(only.date.timeIntervalSince(time)) < Self.connectGap / 2 {
+        if let only = pts.first, pts.count == 1, abs(only.date.timeIntervalSince(time)) < layer.connectGap / 2 {
             return only.value
         }
         guard snap else { return nil }
@@ -659,10 +692,9 @@ struct UnifiedTimeline: View {
         }
         if layout.bandRect.insetBy(dx: -10, dy: -10).contains(point) {
             var best: (TimelineMark, CGFloat)?
-            for mark in eventPoints {
-                let p = CGPoint(x: layout.x(mark.date), y: layout.eventY(mark.layer))
+            for (mark, p) in eventPositions(layout: layout) {
                 let d = hypot(p.x - point.x, p.y - point.y)
-                if d < 22, best == nil || d < best!.1 { best = (mark, d) }
+                if d < 14, best == nil || d < best!.1 { best = (mark, d) }
             }
             if let hit = best?.0 { return hit }
             let time = layout.date(atX: point.x)
@@ -716,8 +748,7 @@ struct UnifiedTimeline: View {
                 let rect = CGRect(x: bx0, y: layout.bandTop + 3, width: bx1 - bx0, height: layout.bandHeight - 6)
                 ctx.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(band.color.opacity(0.24)))
             }
-            for mark in eventPoints {
-                let p = CGPoint(x: layout.x(mark.date), y: layout.eventY(mark.layer))
+            for (mark, p) in eventPositions(layout: layout) {
                 if let art = mark.art {
                     ctx.draw(Image(art), in: CGRect(x: p.x - 12, y: p.y - 12, width: 24, height: 24))
                 } else {
@@ -728,32 +759,22 @@ struct UnifiedTimeline: View {
             }
         }
 
-        // Numeric scale lines + points, clipped to the scale zone.
-        // Overlapping stretches become a candy-stripe dash of the colours
-        // that share that path, so one series never hides another.
+        // Numeric scale lines + points, clipped to the scale zone. Each
+        // series is one continuous smooth curve, halo first so it reads
+        // against the grid and against other lines. Where two series land
+        // on the same value the later one simply sits on top — plainer
+        // than the dashed "candy stripe" this used to switch to on overlap,
+        // which read as the line tearing apart wherever curves crossed.
         context.drawLayer { ctx in
             ctx.clip(to: Path(layout.scaleRect))
             let activeScales = TimelineLayer.numericLayers.filter(isOn)
-            let overlaps = overlapRuns(layout: layout, layers: activeScales)
             for layer in activeScales {
                 for group in numericGroups(for: layer) where group.count > 1 {
                     let points = group.map { CGPoint(x: layout.x($0.date), y: layout.y($0.value ?? 0)) }
                     let path = smoothPath(points)
                     ctx.stroke(path, with: .color(AppTheme.parchmentCard), lineWidth: 6.4)
-                    for range in soloRanges(for: layer, overlaps: overlaps, layout: layout) {
-                        ctx.drawLayer { inner in
-                            inner.clip(to: Path(CGRect(x: range.0, y: layout.scaleTop, width: range.1 - range.0, height: layout.scaleHeight)))
-                            inner.stroke(path, with: .color(layer.color), lineWidth: 3)
-                        }
-                    }
+                    ctx.stroke(path, with: .color(layer.color), lineWidth: 3)
                 }
-            }
-            for run in overlaps where run.points.count > 1 {
-                var path = Path()
-                path.move(to: run.points[0])
-                for point in run.points.dropFirst() { path.addLine(to: point) }
-                ctx.stroke(path, with: .color(AppTheme.parchmentCard), lineWidth: 6.4)
-                strokeCandyStripe(&ctx, path: path, colors: run.layers.map(\.color), lineWidth: 3.2)
             }
             for mark in numericPoints {
                 let p = CGPoint(x: layout.x(mark.date), y: layout.y(mark.value ?? 0))
@@ -872,122 +893,6 @@ struct UnifiedTimeline: View {
         }
     }
 
-    private struct StripeRun {
-        var x0: CGFloat
-        var x1: CGFloat
-        var layers: [TimelineLayer]
-        var points: [CGPoint]
-    }
-
-    /// Consecutive stretches where two or more numeric series share the same
-    /// y (within a few pixels). Drawn as a candy-stripe of those colours so
-    /// the lower line is never painted over and lost.
-    private func overlapRuns(layout: ChartLayout, layers: [TimelineLayer]) -> [StripeRun] {
-        guard layers.count >= 2 else { return [] }
-        let step: CGFloat = 3
-        let threshold: CGFloat = 7
-        let minWidth: CGFloat = 8
-
-        struct Sample {
-            let x: CGFloat
-            let clusters: [[TimelineLayer]]
-            let yForLayer: [TimelineLayer: CGFloat]
-        }
-
-        var samples: [Sample] = []
-        var x = layout.x0
-        while x <= layout.x1 {
-            let time = layout.date(atX: x)
-            var yMap: [TimelineLayer: CGFloat] = [:]
-            var remaining: [(TimelineLayer, CGFloat)] = []
-            for layer in layers {
-                if let value = valueAt(layer, time) {
-                    let y = layout.y(value)
-                    yMap[layer] = y
-                    remaining.append((layer, y))
-                }
-            }
-            remaining.sort { $0.1 < $1.1 }
-            var clusters: [[TimelineLayer]] = []
-            while !remaining.isEmpty {
-                var cluster = [remaining.removeFirst()]
-                var grew = true
-                while grew {
-                    grew = false
-                    remaining.removeAll { item in
-                        if cluster.contains(where: { abs($0.1 - item.1) <= threshold }) {
-                            cluster.append(item)
-                            grew = true
-                            return true
-                        }
-                        return false
-                    }
-                }
-                if cluster.count >= 2 {
-                    let ordered = TimelineLayer.numericLayers.filter { layer in cluster.contains { $0.0 == layer } }
-                    clusters.append(ordered)
-                }
-            }
-            samples.append(Sample(x: x, clusters: clusters, yForLayer: yMap))
-            x += step
-        }
-
-        func key(_ layers: [TimelineLayer]) -> String {
-            layers.map(\.rawValue).joined(separator: ",")
-        }
-
-        var open: [String: StripeRun] = [:]
-        var runs: [StripeRun] = []
-        for sample in samples {
-            let current = Set(sample.clusters.map(key))
-            for (k, run) in open where !current.contains(k) {
-                if run.x1 - run.x0 >= minWidth { runs.append(run) }
-                open.removeValue(forKey: k)
-            }
-            for cluster in sample.clusters {
-                let k = key(cluster)
-                let ys = cluster.compactMap { sample.yForLayer[$0] }
-                guard !ys.isEmpty else { continue }
-                let point = CGPoint(x: sample.x, y: ys.reduce(0, +) / CGFloat(ys.count))
-                if var run = open[k] {
-                    run.x1 = sample.x
-                    run.points.append(point)
-                    open[k] = run
-                } else {
-                    open[k] = StripeRun(x0: sample.x, x1: sample.x, layers: cluster, points: [point])
-                }
-            }
-        }
-        for run in open.values where run.x1 - run.x0 >= minWidth {
-            runs.append(run)
-        }
-        return runs
-    }
-
-    private func soloRanges(for layer: TimelineLayer, overlaps: [StripeRun], layout: ChartLayout) -> [(CGFloat, CGFloat)] {
-        let involved = overlaps.filter { $0.layers.contains(layer) }.sorted { $0.x0 < $1.x0 }
-        var ranges: [(CGFloat, CGFloat)] = []
-        var cursorX = layout.x0
-        for run in involved {
-            if run.x0 > cursorX + 1 { ranges.append((cursorX, run.x0)) }
-            cursorX = max(cursorX, run.x1)
-        }
-        if layout.x1 > cursorX + 1 { ranges.append((cursorX, layout.x1)) }
-        return ranges
-    }
-
-    private func strokeCandyStripe(_ context: inout GraphicsContext, path: Path, colors: [Color], lineWidth: CGFloat) {
-        let dash: CGFloat = 7
-        let count = max(colors.count, 1)
-        let gap = dash * CGFloat(count - 1)
-        for (index, color) in colors.enumerated() {
-            context.stroke(
-                path,
-                with: .color(color),
-                style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt, lineJoin: .round, dash: [dash, gap], dashPhase: dash * CGFloat(index))
-            )
-        }
-    }
 
     private struct Tick { let x: CGFloat; let label: String }
 
@@ -1060,7 +965,7 @@ struct UnifiedTimeline: View {
             }
             if let mark {
                 Divider().overlay(ChartPalette.dashLine)
-                Text(mark.title)
+                Text(combinedTitle(for: mark))
                     .font(.lora(12.5, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1093,6 +998,16 @@ struct UnifiedTimeline: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.parchmentCard))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+    }
+
+    /// Several emotions felt at once are one entry, not one each — naming
+    /// only the mark nearest the tap would silently drop the others. Marks
+    /// sharing the same entry (`target`) get listed together instead.
+    private func combinedTitle(for mark: TimelineMark) -> String {
+        guard mark.layer == .emotion, let target = mark.target else { return mark.title }
+        let siblings = marks.filter { $0.layer == .emotion && $0.target == target }
+        guard siblings.count > 1 else { return mark.title }
+        return siblings.map(\.title).joined(separator: " · ")
     }
 
     private func tooltipNotes(for cursor: Date) -> [String] {

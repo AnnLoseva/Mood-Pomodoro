@@ -190,8 +190,9 @@ struct DiaryPeriodContent: View {
             sleep: sleepStore.sessions
         )
 
+        let span = timelineSpan
         let builtMarks = await Task.detached(priority: .userInitiated) {
-            TimelineSnapshotBuilder.build(facts: facts, contextDays: [])
+            TimelineSnapshotBuilder.build(facts: facts, span: span)
         }.value
 
         guard generation == buildGeneration else { return }
@@ -200,6 +201,7 @@ struct DiaryPeriodContent: View {
             intervalEnd: builtMarks.intervalEnd,
             marks: builtMarks.marks,
             numericGroups: builtMarks.numericGroups,
+            dailyAverages: builtMarks.dailyAverages,
             contextDays: contextDays
         )
         daily = dailySummary

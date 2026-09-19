@@ -69,21 +69,6 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
     var isInterval: Bool { self == .sleep || self == .activity }
     var isEvent: Bool { self == .emotion || self == .food || self == .impulse }
 
-    /// How far apart two points of this layer can sit and still be drawn as
-    /// one connected line. Mood/energy/motivation come from check-ins during
-    /// sessions, dense enough that a 90-minute gap safely means "different
-    /// moment", not "missing data". Hunger and appetite are logged only
-    /// around meals — a handful of times a day at most — so the same short
-    /// gap would leave every point stranded as an isolated dot. They get a
-    /// day-long gap instead, wide enough to still connect a normal day's
-    /// entries into a line.
-    var connectGap: TimeInterval {
-        switch self {
-        case .hunger, .appetite: return 20 * 3600
-        default: return 90 * 60
-        }
-    }
-
     var eventRowFraction: Double {
         switch self {
         case .emotion: return 0.2
@@ -120,6 +105,7 @@ enum TimelineSpan: String, CaseIterable, Identifiable, Sendable {
 /// re-resolve titles without walking SwiftData again.
 enum TimelineCaption: Sendable, Hashable {
     case scale(layer: TimelineLayer, value: Int)
+    case dailyAverage(layer: TimelineLayer, value: Double)
     case food(FoodCategory)
     case emotion(Emotion)
     case impulse(category: ImpulseCategory, extra: String)
@@ -149,6 +135,8 @@ struct TimelineMark: Identifiable, Sendable, Hashable {
         switch caption {
         case .scale(let layer, let value):
             return layer.title + " · \(value)/5"
+        case .dailyAverage(let layer, let value):
+            return layer.title + " · " + L("среднее за день", "daily average") + " " + String(format: "%.1f", value)
         case .food(let category):
             return "\(category.emoji) \(category.label)"
         case .emotion(let emotion):
@@ -250,7 +238,12 @@ struct TimelineSnapshot: Sendable {
     let intervalStart: Date
     let intervalEnd: Date
     let marks: [TimelineMark]
+    /// Every recorded value, joined into lines. Week and month never break
+    /// a line; a day breaks it only across a night's sleep.
     let numericGroups: [TimelineLayer: [[TimelineMark]]]
+    /// One mark per day that has records, holding that day's average over
+    /// time (not over check-ins). Empty for a day span.
+    let dailyAverages: [TimelineLayer: [TimelineMark]]
     let contextDays: [DayAggregate]
 
     static let empty = TimelineSnapshot(
@@ -258,6 +251,7 @@ struct TimelineSnapshot: Sendable {
         intervalEnd: .distantPast,
         marks: [],
         numericGroups: [:],
+        dailyAverages: [:],
         contextDays: []
     )
 
@@ -265,8 +259,6 @@ struct TimelineSnapshot: Sendable {
 }
 
 enum TimelineSnapshotBuilder {
-    static let connectGap: TimeInterval = 90 * 60
-
     static func capture(
         interval: DateInterval,
         checkIns: [CheckIn],
@@ -323,7 +315,12 @@ enum TimelineSnapshotBuilder {
         )
     }
 
-    static func build(facts: TimelineFacts, contextDays: [DayAggregate] = []) -> TimelineSnapshot {
+    static func build(
+        facts: TimelineFacts,
+        span: TimelineSpan,
+        contextDays: [DayAggregate] = [],
+        calendar: Calendar = .current
+    ) -> TimelineSnapshot {
         PerfSignpost.interval("timeline.snapshot") {
             var marks: [TimelineMark] = []
             marks.reserveCapacity(
@@ -455,9 +452,21 @@ enum TimelineSnapshotBuilder {
 
             marks.sort { $0.date < $1.date }
 
+            // A line is broken only by a night's sleep, and only in the day
+            // view: that is where a new day starts. A longer window never
+            // breaks — a quiet hour, or a quiet day, is not a new line.
+            let nightSleeps = span == .day
+                ? facts.sleep.filter { $0.kind == .night }.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
+                : []
+
             var groups: [TimelineLayer: [[TimelineMark]]] = [:]
+            var averages: [TimelineLayer: [TimelineMark]] = [:]
             for layer in TimelineLayer.numericLayers {
-                groups[layer] = numericGroups(marks.filter { $0.layer == layer && $0.value != nil }, gap: layer.connectGap)
+                let points = marks.filter { $0.layer == layer && $0.value != nil }
+                groups[layer] = numericGroups(points, breakingAt: nightSleeps)
+                if span != .day {
+                    averages[layer] = dailyAverages(points, layer: layer, calendar: calendar)
+                }
             }
 
             return TimelineSnapshot(
@@ -465,17 +474,21 @@ enum TimelineSnapshotBuilder {
                 intervalEnd: facts.intervalEnd,
                 marks: marks,
                 numericGroups: groups,
+                dailyAverages: averages,
                 contextDays: contextDays
             )
         }
     }
 
-    static func numericGroups(_ points: [TimelineMark], gap: TimeInterval = connectGap) -> [[TimelineMark]] {
+    /// Joins points into lines. Points are connected however far apart they
+    /// are; a line starts anew only where one of `breaks` lies between two
+    /// neighbours (or the neighbour sits inside it).
+    static func numericGroups(_ points: [TimelineMark], breakingAt breaks: [DateInterval] = []) -> [[TimelineMark]] {
         let pts = points.sorted { $0.date < $1.date }
         var out: [[TimelineMark]] = []
         var current: [TimelineMark] = []
         for (index, point) in pts.enumerated() {
-            if index > 0, point.date.timeIntervalSince(pts[index - 1].date) > gap {
+            if index > 0, breaks.contains(where: { $0.start < point.date && $0.end > pts[index - 1].date }) {
                 out.append(current)
                 current = []
             }
@@ -483,6 +496,63 @@ enum TimelineSnapshotBuilder {
         }
         if !current.isEmpty { out.append(current) }
         return out
+    }
+
+    /// One mark per calendar day that holds a record of `layer`, set at the
+    /// middle of the day. Each value is the mean of the line over the hours
+    /// of that day — the same straight-line path the chart draws between
+    /// records — so a day with twenty check-ins in one morning weighs the
+    /// morning by its length, not by its count. Hours before the first record
+    /// and after the last are not on the line and are left out of the mean.
+    static func dailyAverages(_ points: [TimelineMark], layer: TimelineLayer, calendar: Calendar = .current) -> [TimelineMark] {
+        let pts = points.filter { $0.value != nil }.sorted { $0.date < $1.date }
+        guard !pts.isEmpty else { return [] }
+
+        var area: [Date: Double] = [:]
+        var seconds: [Date: TimeInterval] = [:]
+        for (a, b) in zip(pts, pts.dropFirst()) {
+            let span = b.date.timeIntervalSince(a.date)
+            guard span > 0, let va = a.value, let vb = b.value else { continue }
+            var day = calendar.startOfDay(for: a.date)
+            while day < b.date {
+                guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+                let lo = max(a.date, day)
+                let hi = min(b.date, next)
+                if hi > lo {
+                    let v0 = va + (vb - va) * lo.timeIntervalSince(a.date) / span
+                    let v1 = va + (vb - va) * hi.timeIntervalSince(a.date) / span
+                    let length = hi.timeIntervalSince(lo)
+                    area[day, default: 0] += (v0 + v1) / 2 * length
+                    seconds[day, default: 0] += length
+                }
+                day = next
+            }
+        }
+
+        var recorded: [Date: [Double]] = [:]
+        for point in pts {
+            if let value = point.value { recorded[calendar.startOfDay(for: point.date), default: []].append(value) }
+        }
+
+        return recorded.keys.sorted().compactMap { day in
+            let value: Double
+            if let length = seconds[day], length > 0 {
+                value = (area[day] ?? 0) / length
+            } else if let values = recorded[day], !values.isEmpty {
+                // A lone record has no stretch of line to weigh.
+                value = values.reduce(0, +) / Double(values.count)
+            } else {
+                return nil
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
+            return TimelineMark(
+                id: "avg-\(layer.rawValue)-\(Int(day.timeIntervalSince1970))",
+                date: day.addingTimeInterval(next.timeIntervalSince(day) / 2),
+                layer: layer,
+                value: value,
+                caption: .dailyAverage(layer: layer, value: value)
+            )
+        }
     }
 }
 

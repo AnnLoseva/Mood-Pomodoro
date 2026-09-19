@@ -27,8 +27,8 @@ struct PerformanceSnapshotTests {
             sessions: [],
             sleep: []
         )
-        let first = TimelineSnapshotBuilder.build(facts: facts)
-        let second = TimelineSnapshotBuilder.build(facts: facts)
+        let first = TimelineSnapshotBuilder.build(facts: facts, span: .day)
+        let second = TimelineSnapshotBuilder.build(facts: facts, span: .day)
         #expect(first.marks.map(\.id) == second.marks.map(\.id))
         #expect(first.marks.contains { $0.id.contains("00000000-0000-0000-0000-000000000001") })
     }
@@ -119,7 +119,7 @@ struct PerformanceBenchmarks {
         )
 
         let snapshotStarted = Date()
-        let snapshot = TimelineSnapshotBuilder.build(facts: facts)
+        let snapshot = TimelineSnapshotBuilder.build(facts: facts, span: .month, calendar: calendar)
         let snapshotMS = Date().timeIntervalSince(snapshotStarted) * 1000
 
         let summaryStarted = Date()

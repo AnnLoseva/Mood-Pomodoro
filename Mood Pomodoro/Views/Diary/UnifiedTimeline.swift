@@ -96,10 +96,11 @@ private struct ChartLayout {
 }
 
 /// Raw events on a shared clock, drawn as one combined plot (scales, bands,
-/// events, context) instead of stacked separate charts. Period mode does
-/// not silently average events: a month still shows every mark, and lines
-/// only join neighbours within 90 minutes so sparse check-ins never look
-/// like a continuous line.
+/// events, context) instead of stacked separate charts. Events are never
+/// averaged: a month still shows every mark. The scale lines are never
+/// broken by a quiet stretch — a day view breaks them only across a night's
+/// sleep, and week and month draw one line through the daily averages
+/// (weighted by hours, not by check-ins) unless asked for every record.
 struct UnifiedTimeline: View {
     let date: Date
     let snapshot: TimelineSnapshot
@@ -109,6 +110,7 @@ struct UnifiedTimeline: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("diary.timeline.layers") private var layersRaw = "mood,sleep,food"
     @AppStorage("diary.timeline.preset") private var presetKeyRaw = ""
+    @AppStorage("diary.timeline.dailyAverages") private var showsDailyAverages = true
     @State private var isSelecting = false
     @State private var cursor: Date?
     @State private var rangeSelection: ClosedRange<Date>?
@@ -254,7 +256,17 @@ struct UnifiedTimeline: View {
         snapshot.marks.filter { isOn($0.layer) }
     }
 
-    private var numericPoints: [TimelineMark] { marks.filter { $0.layer.isNumeric && $0.value != nil } }
+    /// Week and month draw one point per day by default; a day always
+    /// draws what was recorded.
+    private var usesDailyAverages: Bool { span != .day && showsDailyAverages }
+
+    /// Every recorded value on the visible layers, whatever is drawn.
+    private var recordedPoints: [TimelineMark] { marks.filter { $0.layer.isNumeric && $0.value != nil } }
+    /// The points the scale lines are drawn through.
+    private var numericPoints: [TimelineMark] {
+        guard usesDailyAverages else { return recordedPoints }
+        return TimelineLayer.numericLayers.filter(isOn).flatMap { snapshot.dailyAverages[$0] ?? [] }
+    }
     private var eventPoints: [TimelineMark] { marks.filter(\.layer.isEvent) }
     private var bandMarks: [TimelineMark] { marks.filter(\.layer.isInterval) }
 
@@ -288,29 +300,32 @@ struct UnifiedTimeline: View {
     }
 
     private func numericGroups(for layer: TimelineLayer) -> [[TimelineMark]] {
-        snapshot.numericGroups[layer] ?? []
+        if usesDailyAverages {
+            // One line, never broken: a quiet day is not a gap.
+            guard let days = snapshot.dailyAverages[layer], !days.isEmpty else { return [] }
+            return [days]
+        }
+        return snapshot.numericGroups[layer] ?? []
     }
 
     private func valueAt(_ layer: TimelineLayer, _ time: Date, snap: Bool = false) -> Double? {
-        // `numericGroups` is already sorted and precomputed once per
-        // snapshot — reusing it here avoids re-filtering and re-sorting the
-        // whole mark list on every call, which mattered a lot since this
-        // runs inside the overlap-detection sweep below on every canvas
-        // redraw (i.e. every frame of a pan/pinch gesture).
-        let pts = numericGroups(for: layer).flatMap { $0 }
-        guard !pts.isEmpty else { return nil }
-        for (a, b) in zip(pts, pts.dropFirst()) {
-            let gap = b.date.timeIntervalSince(a.date)
-            if time >= a.date && time <= b.date, gap > 0, gap <= layer.connectGap {
-                let k = time.timeIntervalSince(a.date) / gap
-                return (a.value ?? 0) + ((b.value ?? 0) - (a.value ?? 0)) * k
+        // The groups are already sorted and precomputed once per snapshot —
+        // reusing them here avoids re-filtering and re-sorting the whole
+        // mark list on every call, which runs on every canvas redraw (i.e.
+        // every frame of a pan/pinch gesture).
+        let groups = numericGroups(for: layer)
+        for group in groups {
+            for (a, b) in zip(group, group.dropFirst()) {
+                let gap = b.date.timeIntervalSince(a.date)
+                if time >= a.date && time <= b.date, gap > 0 {
+                    let k = time.timeIntervalSince(a.date) / gap
+                    return (a.value ?? 0) + ((b.value ?? 0) - (a.value ?? 0)) * k
+                }
             }
         }
-        if let only = pts.first, pts.count == 1, abs(only.date.timeIntervalSince(time)) < layer.connectGap / 2 {
-            return only.value
-        }
         guard snap else { return nil }
-        let window: TimeInterval = span == .day ? 20 * 60 : 6 * 3600
+        let window: TimeInterval = span == .day ? 20 * 60 : 12 * 3600
+        let pts = groups.flatMap { $0 }
         if let nearest = pts.min(by: { abs($0.date.timeIntervalSince(time)) < abs($1.date.timeIntervalSince(time)) }),
            abs(nearest.date.timeIntervalSince(time)) <= window {
             return nearest.value
@@ -383,12 +398,14 @@ struct UnifiedTimeline: View {
                 FlowLayout(spacing: 8) {
                     spanPicker
                     if canZoom { navCluster }
+                    if span != .day { averagesToggle }
                     selectToggle
                 }
             } else {
                 HStack(spacing: 8) {
                     spanPicker
                     if canZoom { navCluster }
+                    if span != .day { averagesToggle }
                     selectToggle
                     Spacer(minLength: 0)
                 }
@@ -456,6 +473,26 @@ struct UnifiedTimeline: View {
         .buttonStyle(.plain)
         .accessibilityLabel(L("Режим выделения", "Selection mode"))
         .accessibilityValue(isSelecting ? L("включён", "on") : L("выключен", "off"))
+    }
+
+    private var averagesToggle: some View {
+        Button {
+            showsDailyAverages.toggle()
+            selectedMark = nil
+        } label: {
+            Text(L("Среднее за день", "Daily average"))
+                .font(.lora(11.5, weight: showsDailyAverages ? .semibold : .regular))
+                .foregroundStyle(showsDailyAverages ? AppTheme.parchmentCard : AppTheme.ink)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(showsDailyAverages ? AppTheme.forest : ChartPalette.pillFill))
+                .overlay(Capsule().stroke(showsDailyAverages ? AppTheme.forest : ChartPalette.pillBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("Среднее за день", "Daily average"))
+        .accessibilityValue(showsDailyAverages ? L("включено", "on") : L("выключено", "off"))
     }
 
     private func navButton(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
@@ -1051,7 +1088,7 @@ struct UnifiedTimeline: View {
     }
 
     private func average(_ layer: TimelineLayer, in range: ClosedRange<Date>) -> Double? {
-        let pts = numericPoints.filter { $0.layer == layer && $0.date >= range.lowerBound && $0.date <= range.upperBound }
+        let pts = recordedPoints.filter { $0.layer == layer && $0.date >= range.lowerBound && $0.date <= range.upperBound }
         guard !pts.isEmpty else { return nil }
         return pts.reduce(0.0) { $0 + ($1.value ?? 0) } / Double(pts.count)
     }

@@ -21,6 +21,9 @@ struct Mood_PomodoroApp: App {
     /// health data cannot reach the CloudKit-backed store.
     @State private var sleepStore = SleepStore()
     @State private var cloudSync = CloudSyncStatus()
+    /// The ToDo List side. Inert without that app: it only reads a link,
+    /// keeps a queue, and answers two explicit taps.
+    @State private var todoIntegration: TodoIntegrationCoordinator
     private let reasonsStore = ReasonsStore.shared
 
     @State private var quickCheckInSessionID: UUID?
@@ -39,6 +42,9 @@ struct Mood_PomodoroApp: App {
         _sessionManager = State(wrappedValue: manager)
         _cycleStore = State(wrappedValue: CycleStore(container: container))
         _diaryStore = State(wrappedValue: DiaryEntryStore(container: container))
+        let integration = TodoIntegrationCoordinator()
+        _todoIntegration = State(wrappedValue: integration)
+        manager.lifecycleHandler = { [weak integration] event in integration?.handle(lifecycle: event) }
         NotificationDelegate.shared.modelContainer = container
         SessionIntentRuntime.bind(manager)
         ReasonsStore.shared.bind(context: ModelContext(container))
@@ -64,6 +70,7 @@ struct Mood_PomodoroApp: App {
                 .environment(cycleStore)
                 .environment(diaryStore)
                 .environment(sleepStore)
+                .environment(todoIntegration)
                 .modelContainer(container)
                 .sheet(isPresented: $showQuickCheckIn) {
                     QuickCheckInSheet(
@@ -113,6 +120,7 @@ struct Mood_PomodoroApp: App {
             // Incremental: asks HealthKit what changed rather than
             // re-reading a month of history on every activation.
             Task { await sleepStore.refresh() }
+            Task { await todoIntegration.applicationDidBecomeActive() }
             if let session = sessionManager.activeSession {
                 Task { await NotificationScheduler.topUpIfNeeded(for: session) }
             }

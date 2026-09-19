@@ -24,6 +24,12 @@ final class SessionManager {
     private let remoteCoalescer = MainDebouncedCoalescer()
 
     private(set) var activeSession: FocusSession?
+
+    /// Told about the moments the ToDo List integration cares about. Set once
+    /// by the app; the manager itself knows nothing about the other app, so
+    /// the timer, notifications and Live Activity work the same without it.
+    @ObservationIgnored
+    var lifecycleHandler: ((SessionLifecycleEvent) -> Void)?
     /// Bumped on every refresh so SwiftUI rebuilds even when CloudKit mutates
     /// the same `FocusSession` instance in place.
     private(set) var revision: UInt64 = 0
@@ -116,6 +122,7 @@ final class SessionManager {
         intervalMinutes: Int,
         startDate: Date = .now,
         type: SessionType? = nil,
+        sourceTask: TodoFocusRequest? = nil,
         initialConditions: [FactorCategory: FactorOption] = [:]
     ) {
         // Another device may already have an in-flight session — don't start
@@ -126,6 +133,11 @@ final class SessionManager {
         let start = min(startDate, .now)
         let session = FocusSession(activity: activity, startDate: start, checkInIntervalMinutes: intervalMinutes)
         session.sessionType = type
+        if let sourceTask {
+            session.sourceTaskID = sourceTask.taskID
+            session.sourceTaskTitle = sourceTask.title
+            session.sourceApp = sourceTask.source
+        }
         // The session began earlier; the *record* of it is being made now.
         session.createdAt = .now
         context.insert(session)
@@ -240,6 +252,7 @@ final class SessionManager {
             activeSession = nil
         }
         revision += 1
+        lifecycleHandler?(.finished(session))
     }
 
     /// Cancel ≠ End: the session is discarded outright rather than kept as a
@@ -269,12 +282,30 @@ final class SessionManager {
             Task { await LiveActivityController.end(for: session) }
         }
         let id = session.id
+        let taskID = session.sourceTaskID
+        let wasFinished = session.state == .completed
         context.delete(session)
         try? context.save()
         if activeSession?.id == id {
             activeSession = nil
         }
         revision += 1
+        if let taskID, wasFinished {
+            lifecycleHandler?(.deleted(sessionID: id, taskID: taskID))
+        }
+    }
+
+    /// The most recent session started from this task — where the interval
+    /// and type she chose last time come from, so opening the task again
+    /// does not ask for them twice. Nothing is guessed: no earlier session,
+    /// no saved answer.
+    func lastSession(forTask taskID: UUID) -> FocusSession? {
+        var descriptor = FetchDescriptor<FocusSession>(
+            predicate: #Predicate { $0.sourceTaskID == taskID },
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     func addCheckIn(

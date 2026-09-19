@@ -36,6 +36,8 @@ final class AppTabs {
 /// horizontal size class — one codebase, no separate iPhone/iPad targets.
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(SessionManager.self) private var sessionManager
+    @Environment(TodoIntegrationCoordinator.self) private var integration
     @State private var tabs = AppTabs()
 
     var body: some View {
@@ -48,6 +50,16 @@ struct ContentView: View {
         }
         .environment(tabs)
         .goblinChrome()
+        .onOpenURL { url in
+            // A task from ToDo List: bring the start screen (or the running
+            // session) forward. Anything else is ignored.
+            if integration.handle(url: url, activeSession: sessionManager.activeSession) {
+                tabs.selected = .today
+            }
+        }
+        .sheet(item: Binding(get: { integration.prompt }, set: { integration.prompt = $0 })) { prompt in
+            TodoSessionPromptSheet(prompt: prompt)
+        }
     }
 }
 
@@ -192,5 +204,6 @@ private struct iPadRootView: View {
         .environment(CycleStore(container: container))
         .environment(DiaryEntryStore(container: container))
         .environment(SleepStore())
+        .environment(TodoIntegrationCoordinator())
         .modelContainer(container)
 }

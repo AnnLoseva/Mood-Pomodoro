@@ -542,7 +542,14 @@ private struct ExportAssembler {
             updatedAt: clock.instant(session.updatedAt),
             segments: segments,
             conditionChanges: (session.conditionEvents ?? []).sorted { $0.timestamp < $1.timestamp }.map(mapConditionEvent),
-            checkInIds: checkIns.filter { $0.session?.id == session.id }.map { $0.id.uuidString }
+            checkInIds: checkIns.filter { $0.session?.id == session.id }.map { $0.id.uuidString },
+            integration: session.sourceTaskID.map {
+                ExportSessionIntegration(
+                    sourceApp: session.sourceApp,
+                    sourceTaskId: $0.uuidString,
+                    sourceTaskTitle: session.sourceTaskTitle
+                )
+            }
         )
     }
 
@@ -1099,6 +1106,9 @@ private enum ExportMarkdown {
             text += " · \(item.start) – \(item.end ?? "…")"
             if item.end == nil, let through = item.calculatedThrough {
                 text += " " + L("(активна на момент экспорта \(through))", "(active as of export \(through))")
+            }
+            if let link = item.integration {
+                text += " · " + L("задача", "task") + ": \(link.sourceTaskTitle ?? link.sourceTaskId)"
             }
             events.append((item.start, text))
             for segment in item.segments {

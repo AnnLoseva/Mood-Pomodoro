@@ -7,6 +7,9 @@ import SwiftUI
 
 struct NewSessionView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(TodoIntegrationCoordinator.self) private var integration
+    /// The ToDo List task this session will be tied to, if it came from one.
+    @State private var linkedTask: TodoFocusRequest?
     @State private var sessionType: SessionType?
     @State private var activity: String = ""
     @State private var intervalMinutes: Int = 10
@@ -42,6 +45,9 @@ struct NewSessionView: View {
                 .padding(.top, 8)
 
                 VStack(alignment: .leading, spacing: 22) {
+                    if let linkedTask {
+                        linkedTaskRow(linkedTask)
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L("Чем занимаешься?", "What are you working on?"))
                             .font(.lora(14, weight: .medium))
@@ -105,8 +111,11 @@ struct NewSessionView: View {
                         intervalMinutes: intervalMinutes,
                         startDate: resolvedStart,
                         type: sessionType,
+                        sourceTask: linkedTask,
                         initialConditions: selectedConditions
                     )
+                    if let linkedTask { integration.focusDidStart(linkedTask) }
+                    linkedTask = nil
                     startedEarlier = false
                 } label: {
                     Text(startedEarlier
@@ -140,6 +149,48 @@ struct NewSessionView: View {
         .sheet(isPresented: $showQuickCheckIn) {
             QuickCheckInSheet(sessionID: nil)
         }
+        .onChange(of: integration.pendingFocus, initial: true) { _, request in
+            if let request { apply(request) }
+        }
+    }
+
+    // MARK: - From ToDo List
+
+    /// Fills in what the link carried, and only that, plus what she chose the
+    /// last time she worked on this same task. The type is never guessed
+    /// from the name: without an earlier answer it stays empty and the usual
+    /// rule (a type before starting) applies.
+    private func apply(_ request: TodoFocusRequest) {
+        linkedTask = request
+        activity = request.title
+        if let last = sessionManager.lastSession(forTask: request.taskID) {
+            if intervalOptions.contains(last.checkInIntervalMinutes) {
+                intervalMinutes = last.checkInIntervalMinutes
+            }
+            if let saved = last.sessionType { sessionType = saved }
+        }
+    }
+
+    private func linkedTaskRow(_ request: TodoFocusRequest) -> some View {
+        HStack(spacing: 8) {
+            Text(L("Задача: \(request.title)", "Task: \(request.title)"))
+                .font(.lora(14, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .lineLimit(2)
+            Spacer(minLength: 4)
+            Button {
+                linkedTask = nil
+                integration.dismissFocus()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(AppTheme.inkSoft)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("Не связывать с задачей", "Don't link to the task"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.forest.opacity(0.1)))
     }
 
     private var trimmedActivity: String {

@@ -71,6 +71,11 @@ struct SessionDetailView: View {
                 get: { session.sessionType },
                 set: { sessionManager.setSessionType($0, for: session) }
             ), showsHint: false)
+            if let title = session.sourceTaskTitle {
+                Text(L("Задача из ToDo List: \(title)", "Task from ToDo List: \(title)"))
+                    .font(.lora(13))
+                    .foregroundStyle(AppTheme.forest)
+            }
             Text(DateFormatting.fullDate(session.startDate))
                 .font(.lora(15, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)

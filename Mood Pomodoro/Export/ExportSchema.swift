@@ -281,6 +281,18 @@ struct ExportSession: Codable, Equatable, Sendable {
     var segments: [ExportSegment]
     var conditionChanges: [ExportConditionEvent]
     var checkInIds: [String]
+    /// Present only for a session started from a ToDo List task. Additive and
+    /// optional: files written before it decode unchanged, and a standalone
+    /// session simply has no such key — no task is ever made up. The active
+    /// duration the other app is told about is `activeDurationSeconds`.
+    var integration: ExportSessionIntegration?
+}
+
+struct ExportSessionIntegration: Codable, Equatable, Sendable {
+    var sourceApp: String?
+    var sourceTaskId: String
+    /// The task's name when the session began; the task itself is not copied.
+    var sourceTaskTitle: String?
 }
 
 struct ExportSupportEntry: Codable, Equatable, Sendable {

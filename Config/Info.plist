@@ -2,6 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>AnnaLoseva.Mood-Pomodoro</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>moodpomodoro</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>calmday</string>
+	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Lora-Regular.ttf</string>

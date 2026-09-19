@@ -114,6 +114,12 @@ private struct SessionRow: View {
                 Text(Ldata(session.activity))
                     .font(.lora(17, weight: .medium))
                     .foregroundStyle(AppTheme.ink)
+                if let title = session.sourceTaskTitle {
+                    Text(L("Задача: \(title)", "Task: \(title)"))
+                        .font(.lora(12))
+                        .foregroundStyle(AppTheme.forest)
+                        .lineLimit(1)
+                }
                 Text(DateFormatting.fullDate(session.startDate))
                     .font(.lora(13))
                     .foregroundStyle(AppTheme.inkSoft)

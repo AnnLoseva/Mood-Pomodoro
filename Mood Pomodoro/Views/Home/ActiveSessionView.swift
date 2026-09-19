@@ -8,6 +8,7 @@ import SwiftData
 
 struct ActiveSessionView: View {
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(TodoIntegrationCoordinator.self) private var integration
     @Query(sort: \FactorCategory.sortOrder) private var allCategories: [FactorCategory]
     let session: FocusSession
 
@@ -21,10 +22,21 @@ struct ActiveSessionView: View {
         VStack {
             Spacer(minLength: 0)
             VStack(spacing: 24) {
+                if let conflict = integration.conflict {
+                    conflictBanner(conflict)
+                }
                 VStack(spacing: 6) {
                     Text(Ldata(session.activity))
                         .font(.lora(19, weight: .medium))
                         .foregroundStyle(AppTheme.inkSoft)
+                    // Said once: when the session is named after its task the
+                    // headline already is the task.
+                    if let title = session.sourceTaskTitle, title != session.activity {
+                        Text(L("Задача: \(title)", "Task: \(title)"))
+                            .font(.lora(13))
+                            .foregroundStyle(AppTheme.inkSoft)
+                            .multilineTextAlignment(.center)
+                    }
                     SessionClock(session: session)
                     if session.isPaused {
                         VStack(spacing: 4) {
@@ -117,6 +129,28 @@ struct ActiveSessionView: View {
             isDestructive: true,
             onConfirm: { sessionManager.cancel() }
         )
+    }
+
+    /// A task was opened from ToDo List while this session is running. The
+    /// running session is left exactly as it is; finishing it is the user's
+    /// call, and the task stays ready on the start screen afterwards.
+    private func conflictBanner(_ conflict: TodoIntegrationCoordinator.Conflict) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("Сейчас идёт «\(Ldata(conflict.runningActivity))»", "“\(Ldata(conflict.runningActivity))” is running"))
+                .font(.lora(14, weight: .semibold))
+                .foregroundStyle(AppTheme.ink)
+            Text(L("Задача «\(conflict.requestedTitle)» ждёт: она будет готова к началу, когда ты завершишь эту сессию.", "“\(conflict.requestedTitle)” is waiting: it will be ready to start once you finish this session."))
+                .font(.lora(13))
+                .foregroundStyle(AppTheme.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(L("Не сейчас", "Not now")) { integration.dismissFocus() }
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.forest.opacity(0.1)))
     }
 
     /// Seeds the picker's selection from the conditions active right now,

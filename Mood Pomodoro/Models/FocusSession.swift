@@ -31,6 +31,17 @@ final class FocusSession {
     /// the three. Nothing backfills it — the whole history is *not* учёба.
     var sessionTypeRaw: String?
     var note: String?
+    /// The ToDo List task this session was started from, if any. Only a
+    /// reference: the task itself lives in the other app and is never copied
+    /// here. Optional twice over — a lightweight CloudKit migration, and a
+    /// session started in this app on its own simply has none. Deleting the
+    /// task over there does not touch this session.
+    var sourceTaskID: UUID?
+    /// The task's name as it was when the session started, kept so history
+    /// still reads when the other app is not installed or the task is gone.
+    var sourceTaskTitle: String?
+    /// Which app the link came from ("calmday"). Nil for a standalone session.
+    var sourceApp: String?
     /// When the record was written. Equal to `startDate` for timer sessions;
     /// for a backdated one it is the moment the user remembered, while
     /// `startDate` stays the moment the activity actually began.
@@ -95,6 +106,11 @@ final class FocusSession {
     }
 
     var isManualEntry: Bool { origin == .manual }
+
+    /// True when the session was started from a ToDo List task. A finished
+    /// session never means a finished task — that is a separate, explicit
+    /// answer.
+    var isLinkedToTask: Bool { sourceTaskID != nil }
 
     /// Nil means the session was recorded before types existed, or the user
     /// hasn't chosen one — never "отдых" and never "учёба" by default.

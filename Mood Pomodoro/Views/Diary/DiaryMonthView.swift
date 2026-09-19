@@ -14,23 +14,51 @@ struct DiaryMonthView: View {
     /// Read from the local-only health store, not from the CloudKit
     /// container the rest of the month comes from.
     let sleep: [SleepSessionSummary]
+    /// Everything ever recorded rather than one month: same cards, without
+    /// the calendar (a grid of years is not a calendar) and worded "за всё время".
+    var isAllTime = false
+    /// The period's emotion records and a way to see what was recorded
+    /// around each, so a tapped feeling can be looked back at.
+    var emotionEntries: [EmotionEntry] = []
+    var emotionContext: (Date) -> [String] = { _ in [] }
     /// Regular width (iPad) lays the cards out two-up instead of stacking.
     let isWide: Bool
     let onSelectDay: (Date) -> Void
 
+    @State private var selectedEmotion: Emotion?
+
+    private var periodPhrase: String { isAllTime ? L("за всё время", "over all time") : L("за месяц", "this month") }
+
     var body: some View {
+        content
+            .sheet(item: $selectedEmotion) { emotion in
+                EmotionOccurrencesSheet(
+                    emotion: emotion,
+                    entries: emotionEntries,
+                    context: emotionContext,
+                    onOpenDay: onSelectDay
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         // The calendar stays even in an empty month: it's also how the user
         // gets to a past day to fill in something she forgot.
         if summary.isEmpty && summary.supportStats.isEmpty && sleep.isEmpty && !summary.days.contains(where: \.isPeriodDay) {
             VStack(spacing: 16) {
-                calendarCard
+                if !isAllTime { calendarCard }
                 emptyCard
             }
         } else if isWide {
             VStack(spacing: 16) {
-                HStack(alignment: .top, spacing: 16) {
-                    calendarCard.frame(maxWidth: .infinity)
-                    moodCard.frame(maxWidth: .infinity)
+                if isAllTime {
+                    moodCard
+                } else {
+                    HStack(alignment: .top, spacing: 16) {
+                        calendarCard.frame(maxWidth: .infinity)
+                        moodCard.frame(maxWidth: .infinity)
+                    }
                 }
                 HStack(alignment: .top, spacing: 16) {
                     studyCard.frame(maxWidth: .infinity)
@@ -44,7 +72,7 @@ struct DiaryMonthView: View {
             }
         } else {
             VStack(spacing: 16) {
-                calendarCard
+                if !isAllTime { calendarCard }
                 moodCard
                 studyCard
                 if !summary.emotionCounts.isEmpty { emotionsCard }
@@ -60,10 +88,12 @@ struct DiaryMonthView: View {
     private var emptyCard: some View {
         VStack(spacing: 10) {
             MoodImage(mood: .neutral, size: 64)
-            Text(L("В этом месяце пока пусто", "Nothing this month yet"))
+            Text(isAllTime ? L("Пока ничего не записано", "Nothing recorded yet") : L("В этом месяце пока пусто", "Nothing this month yet"))
                 .font(.lora(17, weight: .semibold))
                 .foregroundStyle(AppTheme.ink)
-            Text(L("Картина месяца соберётся сама из check-in'ов и сессий. Забытое можно добавить задним числом — нажми на день.", "The month's picture builds itself from check-ins and sessions. Anything you forgot can be added afterwards — tap a day."))
+            Text(isAllTime
+                 ? L("Картина соберётся сама из check-in'ов и сессий.", "The picture builds itself from check-ins and sessions.")
+                 : L("Картина месяца соберётся сама из check-in'ов и сессий. Забытое можно добавить задним числом — нажми на день.", "The month's picture builds itself from check-ins and sessions. Anything you forgot can be added afterwards — tap a day."))
                 .font(.lora(13))
                 .foregroundStyle(AppTheme.inkSoft)
                 .multilineTextAlignment(.center)
@@ -120,9 +150,13 @@ struct DiaryMonthView: View {
     }
 
     private var sleepStats: SleepPeriodStatistics? {
-        guard let first = sleep.first?.day,
-              let interval = Calendar.current.dateInterval(of: .month, for: first)
-        else { return nil }
+        guard let first = sleep.first?.day else { return nil }
+        if isAllTime {
+            let start = sleep.map(\.day).min() ?? first
+            let end = (sleep.map(\.day).max() ?? first).addingTimeInterval(24 * 3600)
+            return AnalyticsService.sleepStatistics(sessions: sleep, in: DateInterval(start: start, end: end))
+        }
+        guard let interval = Calendar.current.dateInterval(of: .month, for: first) else { return nil }
         return AnalyticsService.sleepStatistics(sessions: sleep, in: interval)
     }
 
@@ -318,10 +352,10 @@ struct DiaryMonthView: View {
     private var emotionsCard: some View {
         DiaryCard(title: L("🎭 Эмоции", "🎭 Emotions")) {
             VStack(alignment: .leading, spacing: 14) {
-                EmotionCountRows(counts: summary.emotionCounts)
+                EmotionCountRows(counts: summary.emotionCounts) { selectedEmotion = $0 }
                 DiaryNote(text: L(
-                    "Как часто и что ты чувствовала за месяц — счётчик твоих отметок, а не оценка настроения.",
-                    "How often and what you felt this month — a count of your own entries, not a mood score."
+                    "Как часто и что ты чувствовала \(periodPhrase) — счётчик твоих отметок, а не оценка настроения. Нажми на эмоцию — увидишь, когда она была и что было записано рядом.",
+                    "How often and what you felt \(periodPhrase) — a count of your own entries, not a mood score. Tap a feeling to see when it was and what was recorded around it."
                 ))
             }
         }
@@ -374,7 +408,7 @@ struct DiaryMonthView: View {
                     stat(title: L("Сессий", "Sessions"), value: "\(summary.sessionCount)")
                 }
                 if summary.activities.isEmpty {
-                    DiaryNote(text: L("Сессий в этом месяце пока не было.", "No sessions this month yet."))
+                    DiaryNote(text: isAllTime ? L("Сессий пока не было.", "No sessions yet.") : L("Сессий в этом месяце пока не было.", "No sessions this month yet."))
                 } else {
                     Divider().background(AppTheme.border)
                     VStack(spacing: 12) {
@@ -386,7 +420,7 @@ struct DiaryMonthView: View {
                             ActivityStatRow(stats: activity)
                         }
                     }
-                    DiaryNote(text: L("Это твои наблюдения за месяц, а не оценка занятий.", "These are your observations for the month, not a grade of your work."))
+                    DiaryNote(text: isAllTime ? L("Это твои наблюдения за всё время, а не оценка занятий.", "These are your observations over all time, not a grade of your work.") : L("Это твои наблюдения за месяц, а не оценка занятий.", "These are your observations for the month, not a grade of your work."))
                 }
             }
         }
@@ -458,7 +492,7 @@ struct DiaryMonthView: View {
     private var cycleCard: some View {
         DiaryCard(title: L("🌸 Цикл", "🌸 Cycle")) {
             if summary.cycleBuckets.isEmpty {
-                DiaryNote(text: L("Цикл в этом месяце не отмечен.", "No cycle recorded this month."))
+                DiaryNote(text: isAllTime ? L("Цикл пока не отмечен.", "No cycle recorded yet.") : L("Цикл в этом месяце не отмечен.", "No cycle recorded this month."))
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(summary.cycleBuckets) { bucket in

@@ -159,6 +159,7 @@ final class SleepStore {
             // about. The empty state already says what to do.
             return
         }
+        await health.requestMedicationAuthorization()
         isHealthKitEnabled = true
         await importInitialHistory()
         startObserving()
@@ -168,14 +169,25 @@ final class SleepStore {
     /// about — e.g. she connected when only sleep was read, and cycle and
     /// medication came later. The card offers to ask rather than silently
     /// returning nothing.
-    var needsAdditionalPermission: Bool { isHealthKitEnabled && health.hasUnaskedTypes }
+    var needsAdditionalPermission: Bool {
+        isHealthKitEnabled && (health.hasUnaskedTypes || needsMedicationPermission)
+    }
+
+    /// Medication has its own sheet (see `HealthKitSleepService`), so it is
+    /// tracked apart from the types the ordinary sheet covers.
+    var needsMedicationPermission: Bool {
+        isHealthKitEnabled && isMedicationAvailable && !health.hasRequestedMedicationAccess
+    }
 
     /// What the "Обновить" button does: asks about anything new first, so a
     /// refresh can never quietly do nothing because a type was never
     /// authorized. Only ever reached from a tap, never at launch.
     func refreshRequestingAccessIfNeeded() async {
-        if needsAdditionalPermission {
+        if isHealthKitEnabled, health.hasUnaskedTypes {
             try? await health.requestAuthorization()
+        }
+        if needsMedicationPermission {
+            await health.requestMedicationAuthorization()
         }
         await refresh()
     }

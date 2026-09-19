@@ -147,6 +147,8 @@ struct MoodDistributionRows: View {
 /// counts don't sum to a whole the way mood levels do.
 struct EmotionCountRows: View {
     let counts: [EmotionCount]
+    /// When set, a row can be tapped to look at the entries behind it.
+    var onSelect: ((Emotion) -> Void)?
 
     private var maxCount: Int { counts.map(\.count).max() ?? 1 }
 
@@ -154,6 +156,7 @@ struct EmotionCountRows: View {
         VStack(spacing: 10) {
             ForEach(counts) { item in
                 let share = maxCount > 0 ? Double(item.count) / Double(maxCount) : 0
+                Button { onSelect?(item.emotion) } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 10) {
                         Image(item.emotion.imageName)
@@ -172,6 +175,11 @@ struct EmotionCountRows: View {
                         Text("· " + countLabel(item.dayCount, ru: ("день", "дня", "дней"), en: ("day", "days")))
                             .font(.lora(12))
                             .foregroundStyle(AppTheme.inkSoft)
+                        if onSelect != nil {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(AppTheme.inkSoft)
+                        }
                     }
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
@@ -183,6 +191,10 @@ struct EmotionCountRows: View {
                     }
                     .frame(height: 6)
                 }
+                .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .allowsHitTesting(onSelect != nil)
             }
         }
     }
@@ -265,10 +277,12 @@ struct DiaryPeriodStepper: View {
     let onPrevious: () -> Void
     let onNext: () -> Void
     var onTapTitle: (() -> Void)?
+    /// Off for a period with nothing before or after it (all time).
+    var showsArrows = true
 
     var body: some View {
         HStack(spacing: 12) {
-            stepButton(systemImage: "chevron.left", action: onPrevious)
+            if showsArrows { stepButton(systemImage: "chevron.left", action: onPrevious) }
             Button {
                 onTapTitle?()
             } label: {
@@ -286,7 +300,7 @@ struct DiaryPeriodStepper: View {
             }
             .buttonStyle(.plain)
             .disabled(onTapTitle == nil)
-            stepButton(systemImage: "chevron.right", action: onNext)
+            if showsArrows { stepButton(systemImage: "chevron.right", action: onNext) }
         }
     }
 

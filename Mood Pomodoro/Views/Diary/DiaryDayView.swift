@@ -337,6 +337,37 @@ struct DiaryDayView: View {
                     .foregroundStyle(AppTheme.forest)
                     .buttonStyle(.plain)
             }
+            healthSupportActions
+        }
+    }
+
+    /// Pills logged in the Health app are read on launch and whenever the
+    /// app comes to the front; this is the same read on demand, so nothing
+    /// has to be typed in twice.
+    @ViewBuilder
+    private var healthSupportActions: some View {
+        if sleepStore.isHealthKitAvailable {
+            if !sleepStore.isHealthKitEnabled {
+                Button(L("Подключить Apple Health", "Connect Apple Health")) {
+                    Task { await sleepStore.connectHealthKit() }
+                }
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .buttonStyle(.plain)
+            } else if sleepStore.isMedicationAvailable {
+                Button(sleepStore.isImporting ? L("Обновляю…", "Refreshing…") : L("Обновить из Здоровья", "Refresh from Health")) {
+                    Task { await sleepStore.refreshRequestingAccessIfNeeded() }
+                }
+                .font(.lora(13, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .buttonStyle(.plain)
+                .disabled(sleepStore.isImporting)
+                if sleepStore.needsMedicationPermission {
+                    DiaryNote(text: L("Нажми «Обновить» — Health спросит, какие лекарства показывать здесь. Дальше приём будет подтягиваться сам при входе в приложение.", "Tap “Refresh” — Health will ask which medications to show here. After that, doses are read on their own when you open the app."))
+                }
+            } else {
+                DiaryNote(text: L("Приём таблеток читается из Health только на iOS 26 и новее.", "Medication is read from Health only on iOS 26 and later."))
+            }
         }
     }
 

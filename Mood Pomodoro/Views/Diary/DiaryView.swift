@@ -20,8 +20,22 @@ struct DiaryView: View {
     private enum Mode: String, CaseIterable, Identifiable {
         case day
         case month
+        case all
         var id: String { rawValue }
-        var title: String { self == .day ? L("День", "Day") : L("Месяц", "Month") }
+        var title: String {
+            switch self {
+            case .day: return L("День", "Day")
+            case .month: return L("Месяц", "Month")
+            case .all: return L("Общее", "Overall")
+            }
+        }
+        var span: TimelineSpan {
+            switch self {
+            case .day: return .day
+            case .month: return .month
+            case .all: return .all
+            }
+        }
     }
 
     @Environment(SessionManager.self) private var sessionManager
@@ -31,9 +45,10 @@ struct DiaryView: View {
     @Environment(\.iPadSidebarHidden) private var iPadSidebarHidden
     @Query(sort: \CycleEntry.date, order: .reverse) private var cycleEntries: [CycleEntry]
 
-    @State private var mode: Mode = .day
     @State private var selectedDate: Date = .now
     @State private var timelineSpan: TimelineSpan = .day
+    /// The day tapped on the week/month chart, so "День" can open it.
+    @State private var tappedDay: Date?
     @State private var showQuickCheckIn = false
     @State private var entrySheet: DiaryEntrySheet?
     @State private var showExport = false
@@ -43,6 +58,16 @@ struct DiaryView: View {
     private let calendar = Calendar.current
 
     private var isToday: Bool { calendar.isDateInToday(selectedDate) }
+
+    /// The tab is whatever the chart's span says, so the chart's own
+    /// Day / Week / Month / All picker and the tabs above can never disagree.
+    private var mode: Mode {
+        switch timelineSpan {
+        case .day: return .day
+        case .week, .month: return .month
+        case .all: return .all
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -68,6 +93,7 @@ struct DiaryView: View {
                                     isWide: isWide,
                                     isToday: isToday,
                                     timelineSpan: $timelineSpan,
+                                    tappedDay: $tappedDay,
                                     onQuickMood: { showQuickCheckIn = true },
                                     onAdd: { entrySheet = $0 },
                                     onEdit: { target, day in
@@ -75,10 +101,11 @@ struct DiaryView: View {
                                         entrySheet = DiaryEntrySheet(editing: target)
                                     },
                                     onSelectDay: { day in
+                                        tappedDay = nil
                                         selectedDate = day
-                                        mode = .day
                                         timelineSpan = .day
-                                    }
+                                    },
+                                    onStep: { shift(by: $0) }
                                 )
                                 .id("\(timelineSpan.rawValue)-\(calendar.startOfDay(for: selectedDate).timeIntervalSince1970)")
                             }
@@ -103,10 +130,12 @@ struct DiaryView: View {
             .sheet(isPresented: $showExport) {
                 ExportSheet()
             }
+            // A view rebuilt for another day or span starts with no tap.
+            .onChange(of: selectedDate) { _, _ in tappedDay = nil }
+            .onChange(of: timelineSpan) { _, _ in tappedDay = nil }
             .onChange(of: tabs.diaryDay) { _, day in
                 guard let day else { return }
                 selectedDate = day
-                mode = .day
                 timelineSpan = .day
             }
         }
@@ -117,8 +146,9 @@ struct DiaryView: View {
             ForEach(Mode.allCases) { item in
                 let isSelected = item == mode
                 Button {
-                    mode = item
-                    timelineSpan = item == .day ? .day : .month
+                    if item == .day, let tappedDay { selectedDate = tappedDay }
+                    tappedDay = nil
+                    timelineSpan = item.span
                 } label: {
                     Text(item.title)
                         .font(.lora(13, weight: isSelected ? .semibold : .regular))
@@ -131,7 +161,7 @@ struct DiaryView: View {
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 8)
-            if !isToday {
+            if !isToday, mode != .all {
                 Button(L("Сегодня", "Today")) { selectedDate = .now }
                     .font(.lora(13, weight: .medium))
                     .foregroundStyle(AppTheme.forest)
@@ -184,15 +214,32 @@ struct DiaryView: View {
 
     private var stepper: some View {
         DiaryPeriodStepper(
-            title: mode == .day ? dayTitle : monthTitle,
+            title: stepperTitle,
             subtitle: mode == .day
                 ? AnalyticsService.cycleDay(for: selectedDate, marks: cycleEntries.map(\.mark) + sleepStore.cycleMarks)
                     .map { L("🌸 День цикла: \($0)", "🌸 Cycle day: \($0)") }
                 : nil,
             onPrevious: { shift(by: -1) },
             onNext: { shift(by: 1) },
-            onTapTitle: mode == .day ? { mode = .month; timelineSpan = .month } : nil
+            onTapTitle: mode == .day ? { timelineSpan = .month } : nil,
+            showsArrows: timelineSpan != .all
         )
+    }
+
+    private var stepperTitle: String {
+        switch timelineSpan {
+        case .day: return dayTitle
+        case .week: return weekTitle
+        case .month: return monthTitle
+        case .all: return L("Всё время", "All time")
+        }
+    }
+
+    private var weekTitle: String {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: selectedDate) else { return dayTitle }
+        let last = interval.end.addingTimeInterval(-1)
+        let year = last.formatted(.dateTime.year().locale(AppLanguage.current.locale))
+        return DateFormatting.compactDate(interval.start) + " – " + DateFormatting.compactDate(last) + " " + year
     }
 
     private var dayTitle: String {
@@ -204,8 +251,8 @@ struct DiaryView: View {
     }
 
     private func shift(by amount: Int) {
-        let component: Calendar.Component = mode == .day ? .day : .month
-        guard let shifted = calendar.date(byAdding: component, value: amount, to: selectedDate) else { return }
+        guard let component = timelineSpan.calendarComponent,
+              let shifted = calendar.date(byAdding: component, value: amount, to: selectedDate) else { return }
         selectedDate = shifted
     }
 }

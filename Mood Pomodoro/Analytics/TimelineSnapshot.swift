@@ -84,19 +84,25 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
 
 enum TimelineSpan: String, CaseIterable, Identifiable, Sendable {
     case day, week, month
+    /// Everything ever recorded, up to today.
+    case all
     var id: String { rawValue }
     var title: String {
         switch self {
         case .day: return L("День", "Day")
         case .week: return L("Неделя", "Week")
         case .month: return L("Месяц", "Month")
+        case .all: return L("Всё время", "All time")
         }
     }
-    var calendarComponent: Calendar.Component {
+    /// Nil for `.all`, which is not a calendar unit — its start is wherever
+    /// the first record is.
+    var calendarComponent: Calendar.Component? {
         switch self {
         case .day: return .day
         case .week: return .weekOfYear
         case .month: return .month
+        case .all: return nil
         }
     }
 }
@@ -110,6 +116,8 @@ enum TimelineCaption: Sendable, Hashable {
     case emotion(Emotion)
     case impulse(category: ImpulseCategory, extra: String)
     case sleep(kind: SleepKind, duration: TimeInterval, qualityLabel: String?)
+    /// Everything slept on one calendar day — night and naps together.
+    case sleepDay(duration: TimeInterval)
     case activity(name: String, type: SessionType?)
 }
 
@@ -149,6 +157,8 @@ struct TimelineMark: Identifiable, Sendable, Hashable {
             var text = kind.emoji + " " + kind.label + " · " + DurationFormatting.compact(duration)
             if let quality { text += " · " + quality }
             return text
+        case .sleepDay(let duration):
+            return "😴 " + L("Сон за день", "Sleep that day") + " · " + DurationFormatting.compact(duration)
         case .activity(let name, let type):
             return Ldata(name) + " · " + SessionType.label(for: type)
         }
@@ -244,6 +254,9 @@ struct TimelineSnapshot: Sendable {
     /// One mark per day that has records, holding that day's average over
     /// time (not over check-ins). Empty for a day span.
     let dailyAverages: [TimelineLayer: [TimelineMark]]
+    /// One mark per day with any sleep on it, valued in hours, night and
+    /// naps together. Empty for a day span, which draws the sleeps themselves.
+    let sleepDays: [TimelineMark]
     let contextDays: [DayAggregate]
 
     static let empty = TimelineSnapshot(
@@ -252,6 +265,7 @@ struct TimelineSnapshot: Sendable {
         marks: [],
         numericGroups: [:],
         dailyAverages: [:],
+        sleepDays: [],
         contextDays: []
     )
 
@@ -475,7 +489,38 @@ enum TimelineSnapshotBuilder {
                 marks: marks,
                 numericGroups: groups,
                 dailyAverages: averages,
+                sleepDays: span == .day
+                    ? []
+                    : sleepDays(facts.sleep, in: DateInterval(start: facts.intervalStart, end: facts.intervalEnd), calendar: calendar),
                 contextDays: contextDays
+            )
+        }
+    }
+
+    /// Sleep per calendar day for the week and month lines: every night and
+    /// nap filed under a day is added up, so the line answers "how much did
+    /// I sleep that day". A night belongs to the day it ended on. Days
+    /// without a record get no mark — the line runs through them.
+    static func sleepDays(_ sleep: [SleepSessionSummary], in interval: DateInterval, calendar: Calendar = .current) -> [TimelineMark] {
+        var byDay: [Date: [SleepSessionSummary]] = [:]
+        for session in sleep {
+            let day = calendar.startOfDay(for: session.day)
+            guard day >= interval.start, day < interval.end else { continue }
+            byDay[day, default: []].append(session)
+        }
+        return byDay.keys.sorted().compactMap { day in
+            guard let sessions = byDay[day],
+                  let longest = sessions.max(by: { $0.totalSleep < $1.totalSleep }),
+                  let next = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
+            let total = sessions.reduce(0) { $0 + $1.totalSleep }
+            guard total > 0 else { return nil }
+            return TimelineMark(
+                id: "sleepday-\(Int(day.timeIntervalSince1970))",
+                date: day.addingTimeInterval(next.timeIntervalSince(day) / 2),
+                layer: .sleep,
+                value: total / 3600,
+                target: .sleep(longest.id),
+                caption: .sleepDay(duration: total)
             )
         }
     }
@@ -559,7 +604,14 @@ enum TimelineSnapshotBuilder {
 enum DiaryPeriodInterval {
     /// Visible diary/chart window.
     static func visible(for date: Date, span: TimelineSpan, calendar: Calendar = .current) -> DateInterval {
-        calendar.dateInterval(of: span.calendarComponent, for: date)
+        guard let component = span.calendarComponent else {
+            // All time: the real start is the earliest record, which only
+            // the caller has seen. Reading from the beginning of time to the
+            // end of today fetches everything.
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? .now
+            return DateInterval(start: .distantPast, end: tomorrow)
+        }
+        return calendar.dateInterval(of: component, for: date)
             ?? DateInterval(start: calendar.startOfDay(for: date), duration: 24 * 3600)
     }
 
@@ -567,6 +619,7 @@ enum DiaryPeriodInterval {
     /// have started the evening before.
     static func fetch(for date: Date, span: TimelineSpan, calendar: Calendar = .current) -> DateInterval {
         let visible = visible(for: date, span: span, calendar: calendar)
+        if span == .all { return visible }
         let pad: TimeInterval = span == .day ? 36 * 3600 : 12 * 3600
         return DateInterval(start: visible.start.addingTimeInterval(-pad), end: visible.end)
     }
@@ -574,6 +627,7 @@ enum DiaryPeriodInterval {
     /// Cycle day needs a start recorded before the visible window.
     static func cycleFetch(for date: Date, span: TimelineSpan, calendar: Calendar = .current) -> DateInterval {
         let visible = visible(for: date, span: span, calendar: calendar)
+        if span == .all { return visible }
         let start = calendar.date(byAdding: .day, value: -400, to: visible.start) ?? visible.start
         return DateInterval(start: start, end: visible.end)
     }

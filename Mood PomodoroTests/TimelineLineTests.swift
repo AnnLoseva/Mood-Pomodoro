@@ -66,4 +66,52 @@ struct TimelineLineTests {
         #expect(averages.count == 1)
         #expect(averages[0].value == 3)
     }
+
+    private func sleep(_ id: String, _ kind: SleepKind, day: Int, hours: Double) -> SleepSessionSummary {
+        let start = date(day, 1)
+        return SleepSessionSummary(
+            id: id, day: date(day, 0), kind: kind, source: .manual,
+            start: start, end: start.addingTimeInterval(hours * 3600),
+            totalSleep: hours * 3600, timeInBed: nil, awake: 0, stageDurations: [:],
+            awakeningCount: nil, intervals: [], sourceName: nil, sourceBundleIdentifier: nil, productType: nil
+        )
+    }
+
+    @Test func sleepLineAddsNightAndNapOfTheSameDay() {
+        let interval = DateInterval(start: date(1, 0), end: date(8, 0))
+        let days = TimelineSnapshotBuilder.sleepDays([
+            sleep("a", .night, day: 3, hours: 6),
+            sleep("b", .nap, day: 3, hours: 1.5),
+            sleep("c", .night, day: 5, hours: 8),
+            sleep("outside", .night, day: 9, hours: 8)
+        ], in: interval, calendar: utc)
+        #expect(days.map(\.value) == [7.5, 8])
+    }
+
+    // MARK: - Paging between periods
+
+    @Test func monthsFollowOneAnotherThroughTheYearEnd() {
+        var days: [Int] = []
+        var month = utc.date(from: DateComponents(year: 2024, month: 11, day: 15))!
+        for _ in 0..<4 {
+            days.append(AnalyticsService.monthlySummary(month: month, sessions: [], checkIns: [], calendar: utc).days.count)
+            month = utc.date(byAdding: .month, value: 1, to: month)!
+        }
+        // November, December, January, February (2025, not a leap year).
+        #expect(days == [30, 31, 31, 28])
+    }
+
+    @Test func aPeriodSummaryCoversEveryDayOfItsInterval() {
+        let interval = DateInterval(start: date(1, 0), end: date(1, 0).addingTimeInterval(40 * 86400))
+        let summary = AnalyticsService.periodSummary(in: interval, sessions: [], checkIns: [], calendar: utc)
+        #expect(summary.days.count == 40)
+    }
+
+    @Test func allTimeReadsFromTheBeginningToTheEndOfToday() {
+        let interval = DiaryPeriodInterval.visible(for: .now, span: .all, calendar: utc)
+        #expect(interval.start == .distantPast)
+        #expect(interval.end > .now)
+        #expect(interval.end.timeIntervalSince(.now) <= 86400)
+        #expect(TimelineSpan.all.calendarComponent == nil)
+    }
 }

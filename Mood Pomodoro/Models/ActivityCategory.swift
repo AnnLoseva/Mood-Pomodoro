@@ -29,6 +29,10 @@ enum ActivityCategory: String, CaseIterable, Identifiable {
     case lego
     case music
     case study
+    case instituteTheory
+    case institutePractice
+    case homeTheory
+    case homePractice
     case gamedev
     case writing
     case modeling3D
@@ -57,6 +61,10 @@ enum ActivityCategory: String, CaseIterable, Identifiable {
         case .lego: return "Лего"
         case .music: return "Музыкальные инструменты"
         case .study: return "Учёба и теория"
+        case .instituteTheory: return "Институт — теория"
+        case .institutePractice: return "Институт — практика"
+        case .homeTheory: return "Дома — теория"
+        case .homePractice: return "Дома — практика"
         case .gamedev: return "Геймдев"
         case .writing: return "Писательство"
         case .modeling3D: return "3D-моделирование"
@@ -87,6 +95,10 @@ enum ActivityCategory: String, CaseIterable, Identifiable {
         case .lego: return "ActivityLego"
         case .music: return "ActivityMusic"
         case .study: return "ActivityStudy"
+        case .instituteTheory: return "ActivityInstituteTheory"
+        case .institutePractice: return "ActivityInstitutePractice"
+        case .homeTheory: return "ActivityHomeTheory"
+        case .homePractice: return "ActivityHomePractice"
         case .gamedev: return "ActivityGamedev"
         case .writing: return "ActivityWriting"
         case .modeling3D: return "ActivityModeling3D"

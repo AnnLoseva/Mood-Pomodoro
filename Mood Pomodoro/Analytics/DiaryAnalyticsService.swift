@@ -287,14 +287,48 @@ extension AnalyticsService {
                 food: .empty
             )
         }
+        return periodSummary(
+            in: interval,
+            sessions: sessions,
+            checkIns: checkIns,
+            categories: categories,
+            cycleEntries: cycleEntries,
+            supportEntries: supportEntries,
+            foodEntries: foodEntries,
+            hungerEntries: hungerEntries,
+            emotionEntries: emotionEntries,
+            impulseEntries: impulseEntries,
+            healthCycleMarks: healthCycleMarks,
+            healthMedication: healthMedication,
+            calendar: calendar
+        )
+    }
 
+    /// The month screen's figures over any stretch of whole days — a month,
+    /// or everything ever recorded. Same aggregation either way, so the
+    /// all-time tab can never say something the month tab would not.
+    static func periodSummary(
+        in interval: DateInterval,
+        sessions: [FocusSession],
+        checkIns: [CheckIn],
+        categories: [FactorCategory] = [],
+        cycleEntries: [CycleEntry] = [],
+        supportEntries: [SupportEntry] = [],
+        foodEntries: [FoodEntry] = [],
+        hungerEntries: [HungerEntry] = [],
+        emotionEntries: [EmotionEntry] = [],
+        impulseEntries: [ImpulseEntry] = [],
+        healthCycleMarks: [CycleMark] = [],
+        healthMedication: [Date: HealthMedicationDay] = [:],
+        calendar: Calendar = .current
+    ) -> MonthlySummary {
         let monthCheckIns = checkIns.filter { interval.contains($0.timestamp) }
         let monthSessions = sessions.filter { interval.contains($0.startDate) }
         let monthEmotions = emotionEntries.filter { !$0.isEmpty && interval.contains($0.eventDate) }
         let monthImpulses = impulseEntries.filter { interval.contains($0.eventDate) }
         let marks = cycleEntries.map(\.mark) + healthCycleMarks
 
-        let dayCount = calendar.range(of: .day, in: .month, for: interval.start)?.count ?? 0
+        let dayCount = max(0, calendar.dateComponents([.day], from: calendar.startOfDay(for: interval.start), to: interval.end).day ?? 0)
         let byDay = Dictionary(grouping: monthCheckIns) { calendar.startOfDay(for: $0.timestamp) }
         let days: [DayMoodSummary] = (0..<dayCount).compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }

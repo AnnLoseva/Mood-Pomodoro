@@ -11,10 +11,13 @@ struct DiaryPeriodContent: View {
     let isWide: Bool
     let isToday: Bool
     @Binding var timelineSpan: TimelineSpan
+    @Binding var tappedDay: Date?
     let onQuickMood: () -> Void
     let onAdd: (DiaryEntrySheet) -> Void
     let onEdit: (DiaryEditTarget, Date) -> Void
     let onSelectDay: (Date) -> Void
+    /// Swiping the chart past its edge asks the diary to move on a period.
+    let onStep: (Int) -> Void
 
     @Environment(SleepStore.self) private var sleepStore
 
@@ -43,19 +46,23 @@ struct DiaryPeriodContent: View {
         isWide: Bool,
         isToday: Bool,
         timelineSpan: Binding<TimelineSpan>,
+        tappedDay: Binding<Date?>,
         onQuickMood: @escaping () -> Void,
         onAdd: @escaping (DiaryEntrySheet) -> Void,
         onEdit: @escaping (DiaryEditTarget, Date) -> Void,
-        onSelectDay: @escaping (Date) -> Void
+        onSelectDay: @escaping (Date) -> Void,
+        onStep: @escaping (Int) -> Void
     ) {
         self.selectedDate = selectedDate
         self.isDayMode = isDayMode
         self.isWide = isWide
         self.isToday = isToday
         self._timelineSpan = timelineSpan
+        self._tappedDay = tappedDay
         self.onQuickMood = onQuickMood
         self.onAdd = onAdd
         self.onEdit = onEdit
+        self.onStep = onStep
         self.onSelectDay = onSelectDay
 
         let span = timelineSpan.wrappedValue
@@ -81,12 +88,31 @@ struct DiaryPeriodContent: View {
         _impulseEntries = Query(filter: #Predicate<ImpulseEntry> { $0.eventDate >= start && $0.eventDate < end })
     }
 
+    private var isAllTime: Bool { timelineSpan == .all }
+
     private var visibleInterval: DateInterval {
-        DiaryPeriodInterval.visible(for: selectedDate, span: timelineSpan, calendar: calendar)
+        let interval = DiaryPeriodInterval.visible(for: selectedDate, span: timelineSpan, calendar: calendar)
+        guard isAllTime else { return interval }
+        // From the first day anything was recorded, so the chart opens on
+        // the whole history rather than on years of nothing before it.
+        let dates: [Date?] = [
+            checkIns.map(\.timestamp).min(),
+            sessions.map(\.startDate).min(),
+            foodEntries.map(\.eventDate).min(),
+            hungerEntries.map(\.eventDate).min(),
+            emotionEntries.map(\.eventDate).min(),
+            impulseEntries.map(\.eventDate).min(),
+            notes.map(\.timestamp).min(),
+            supportEntries.map(\.day).min(),
+            cycleEntries.map(\.date).min(),
+            sleepStore.sessions.map(\.start).min()
+        ]
+        let first = dates.compactMap { $0 }.min() ?? .now
+        return DateInterval(start: calendar.startOfDay(for: first), end: interval.end)
     }
 
     private var dataStamp: String {
-        "\(timelineSpan.rawValue)|\(visibleInterval.start.timeIntervalSince1970)|\(checkIns.count)|\(sessions.count)|\(foodEntries.count)|\(hungerEntries.count)|\(emotionEntries.count)|\(impulseEntries.count)|\(supportEntries.count)|\(cycleEntries.count)|\(notes.count)|\(sleepStore.sessions.count)|\(sleepStore.cycleMarks.count)|\(sleepStore.medicationDays.count)"
+        "\(timelineSpan.rawValue)|\(visibleInterval.start.timeIntervalSince1970)|\(checkIns.count)|\(sessions.count)|\(foodEntries.count)|\(hungerEntries.count)|\(emotionEntries.count)|\(impulseEntries.count)|\(supportEntries.count)|\(cycleEntries.count)|\(notes.count)|\(sleepStore.sessions.count)|\(sleepStore.cycleMarks.count)|\(sleepStore.medicationDays.count)|\(sleepStore.medicationDays.values.reduce(0) { $0 + $1.takenCount * 100 + $1.skippedCount })"
     }
 
     var body: some View {
@@ -95,6 +121,9 @@ struct DiaryPeriodContent: View {
                 date: selectedDate,
                 snapshot: snapshot,
                 span: $timelineSpan,
+                tappedDay: $tappedDay,
+                onSelectDay: onSelectDay,
+                onStep: onStep,
                 onEdit: onEdit
             )
 
@@ -111,6 +140,11 @@ struct DiaryPeriodContent: View {
                 DiaryMonthView(
                     summary: monthly ?? MonthlySummary.emptyPlaceholder(month: selectedDate),
                     sleep: sleepStore.sessions(in: visibleInterval),
+                    isAllTime: isAllTime,
+                    emotionEntries: emotionEntries
+                        .filter { !$0.isEmpty && visibleInterval.contains($0.eventDate) }
+                        .sorted { $0.eventDate > $1.eventDate },
+                    emotionContext: emotionContext(at:),
                     isWide: isWide,
                     onSelectDay: onSelectDay
                 )
@@ -146,8 +180,8 @@ struct DiaryPeriodContent: View {
             )
         }
         let monthlySummary: MonthlySummary? = isDayMode ? nil : PerfSignpost.interval("monthly.summary") {
-            AnalyticsService.monthlySummary(
-                month: selectedDate,
+            AnalyticsService.periodSummary(
+                in: isAllTime ? interval : (calendar.dateInterval(of: .month, for: selectedDate) ?? interval),
                 sessions: sessions,
                 checkIns: checkIns,
                 categories: categories,
@@ -202,10 +236,52 @@ struct DiaryPeriodContent: View {
             marks: builtMarks.marks,
             numericGroups: builtMarks.numericGroups,
             dailyAverages: builtMarks.dailyAverages,
+            sleepDays: builtMarks.sleepDays,
             contextDays: contextDays
         )
         daily = dailySummary
         if let monthlySummary { monthly = monthlySummary }
+    }
+}
+
+extension DiaryPeriodContent {
+    /// What else was recorded around a feeling — the activity under way, a
+    /// check-in, a meal, an impulse, a note — so a look back at when it
+    /// happened has something to go on. It lists what sat close in time and
+    /// says nothing about what caused what.
+    func emotionContext(at date: Date) -> [String] {
+        var lines: [String] = []
+        let near: TimeInterval = 2 * 3600
+
+        for session in sessions {
+            let segments = (session.segments ?? []).filter { $0.type == .work }
+            if segments.contains(where: { $0.startDate <= date && ($0.endDate ?? .now) >= date }) {
+                lines.append("🌿 " + L("Шло занятие: ", "Activity under way: ") + Ldata(session.activity))
+                break
+            }
+            if segments.contains(where: { ($0.endDate ?? .now) < date && date.timeIntervalSince(($0.endDate ?? .now)) <= 30 * 60 }) {
+                lines.append("🌿 " + L("Перед этим — занятие: ", "Just before — activity: ") + Ldata(session.activity))
+                break
+            }
+        }
+        if let checkIn = checkIns
+            .filter({ abs($0.timestamp.timeIntervalSince(date)) <= 3600 })
+            .min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) }) {
+            var line = "🙂 " + L("Настроение: ", "Mood: ") + checkIn.mood.label + " · " + DateFormatting.time(checkIn.timestamp)
+            if let reason = checkIn.reason, !reason.isEmpty { line += " · " + reason }
+            lines.append(line)
+            if let note = checkIn.note, !note.isEmpty { lines.append("📝 " + note) }
+        }
+        for food in foodEntries where abs(food.eventDate.timeIntervalSince(date)) <= near {
+            lines.append("🍽 " + food.category.label + " · " + DateFormatting.time(food.eventDate))
+        }
+        for impulse in impulseEntries where abs(impulse.eventDate.timeIntervalSince(date)) <= near {
+            lines.append("⚡ " + impulse.category.label + " · " + DateFormatting.time(impulse.eventDate))
+        }
+        for note in notes where abs(note.timestamp.timeIntervalSince(date)) <= near && !note.text.isEmpty {
+            lines.append("📝 " + String(note.text.prefix(160)) + " · " + DateFormatting.time(note.timestamp))
+        }
+        return lines
     }
 }
 

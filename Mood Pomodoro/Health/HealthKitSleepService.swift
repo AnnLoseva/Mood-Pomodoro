@@ -40,39 +40,24 @@ final class HealthKitSleepService {
     @available(iOS 26.0, *)
     private var medicationType: HKSampleType { HKObjectType.medicationDoseEventType() }
 
-    /// Whether this build is allowed to ask for medication data at all.
+    /// Medication is not asked for like sleep. Putting the dose-event type in
+    /// `requestAuthorization(read:)` is what raises the uncaught
+    /// `NSInvalidArgumentException` ("Authorization to read the following
+    /// types is disallowed") — that type is never in this set. Medication
+    /// goes through per-object authorization instead, see
+    /// `requestMedicationAuthorization()`: Health shows the user her own
+    /// medications and she picks which ones this app may read.
     ///
-    /// **Off, and it has to be.** HealthKit treats medication dose events as
-    /// a restricted type: asking for them without the matching entitlement
-    /// does not fail politely, it raises an Objective-C exception that
-    /// terminates the app —
-    ///
-    ///     Terminating app due to uncaught exception 'NSInvalidArgumentException',
-    ///     reason: 'Authorization to read the following types is disallowed:
-    ///              HKMedicationDoseEventTypeIdentifierMedicationDoseEvent'
-    ///
-    /// That is not a Swift error, so it cannot be caught with `try` and
-    /// there is no safe "just attempt it and see". Apple documents exactly
-    /// one value for `com.apple.developer.healthkit.access`
-    /// (`health-records`), and none for medications, so the entitlement this
-    /// needs is not one to guess at.
-    ///
-    /// Everything below medication — the query, the model, the merge with
-    /// the user's own 💊 marks, the tests — is written and works. Flip this
-    /// to `true` once the entitlement is actually granted for the App ID,
-    /// and add it to `Mood Pomodoro.entitlements`; nothing else changes.
-    static let isMedicationReadingEntitled = false
-
-    /// Everything this app ever asks to read, and nothing more. Cycle and
-    /// medication are here because the diary already tracks both by hand;
-    /// Health simply fills in the days the user didn't mark herself.
+    /// Everything the ordinary sheet asks for, and nothing more. Cycle is
+    /// here because the diary already tracks it by hand; Health simply fills
+    /// in the days the user didn't mark herself.
     private var readTypes: Set<HKObjectType> {
-        var types: Set<HKObjectType> = [sleepType, menstrualFlowType]
-        if #available(iOS 26.0, *), Self.isMedicationReadingEntitled {
-            types.insert(medicationType)
-        }
-        return types
+        [sleepType, menstrualFlowType]
     }
+
+    /// Set once the user has been through the medication sheet. Health hides
+    /// what was granted, so this only says the question was put to her.
+    private static let medicationAskedKey = "health.medication.asked"
 
     /// Where the incremental query left off, so a launch reads what changed
     /// rather than the whole history again. Anchors are per-device and
@@ -220,9 +205,28 @@ final class HealthKitSleepService {
     /// iOS 26, where the API simply does not exist — the UI says so rather
     /// than pretending the user never took anything.
     static var isMedicationAvailable: Bool {
-        guard isMedicationReadingEntitled else { return false }
         if #available(iOS 26.0, *) { return isAvailable }
         return false
+    }
+
+    var hasRequestedMedicationAccess: Bool {
+        UserDefaults.standard.bool(forKey: Self.medicationAskedKey)
+    }
+
+    /// Asks Health which of the user's medications this app may read. The
+    /// system shows the sheet every time it is called, so this is only ever
+    /// reached from a tap (connect, or "Обновить") and once until answered —
+    /// never at launch.
+    func requestMedicationAuthorization() async {
+        guard Self.isMedicationAvailable, #available(iOS 26.0, *) else { return }
+        do {
+            try await store.requestPerObjectReadAuthorization(for: HKObjectType.userAnnotatedMedicationType(), predicate: nil)
+            UserDefaults.standard.set(true, forKey: Self.medicationAskedKey)
+        } catch {
+            // Dismissing the sheet is an answer too; she is asked again on
+            // the next "Обновить".
+            return
+        }
     }
 
     /// Medication dose events from Health, collapsed to one record per day.
@@ -278,11 +282,7 @@ final class HealthKitSleepService {
     /// the data, because the notification carries none.
     func startObserving(onChange: @escaping @Sendable () -> Void) {
         guard Self.isAvailable else { return }
-        var types: [HKSampleType] = [sleepType, menstrualFlowType]
-        if #available(iOS 26.0, *), Self.isMedicationReadingEntitled {
-            types.append(medicationType)
-        }
-        for type in types {
+        for type in [sleepType, menstrualFlowType] {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completionHandler, _ in
                 onChange()
                 // Must be called whatever happened, or iOS backs off and

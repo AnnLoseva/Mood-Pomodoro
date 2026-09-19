@@ -41,6 +41,10 @@ private struct ChartLayout {
     let size: CGSize
     let win: ClosedRange<Date>
     let compact: Bool
+    /// Week/month: sleep gets its own zone with a line of hours per day,
+    /// on a scale from 0 up to `sleepMax` hours.
+    let sleepLine: Bool
+    let sleepMax: Double
 
     var gutter: CGFloat { compact ? 40 : 60 }
     let scaleTop: CGFloat = 4
@@ -60,7 +64,10 @@ private struct ChartLayout {
     var plotWidth: CGFloat { max(1, x1 - x0) }
 
     var scaleBottom: CGFloat { scaleTop + scaleHeight }
-    var bandTop: CGFloat { scaleBottom + bandGap }
+    var sleepTop: CGFloat { scaleBottom + bandGap }
+    var sleepZoneHeight: CGFloat { sleepLine ? 72 : 0 }
+    var sleepBottom: CGFloat { sleepTop + sleepZoneHeight }
+    var bandTop: CGFloat { (sleepLine ? sleepBottom : scaleBottom) + bandGap }
     var bandBottom: CGFloat { bandTop + bandHeight }
     var ctxTop: CGFloat { bandBottom + ctxGap }
     var ctxBottom: CGFloat { ctxTop + ctxHeight }
@@ -68,6 +75,7 @@ private struct ChartLayout {
     var totalHeight: CGFloat { tickY + 26 }
 
     var scaleRect: CGRect { CGRect(x: x0, y: scaleTop, width: plotWidth, height: scaleHeight) }
+    var sleepRect: CGRect { CGRect(x: x0, y: sleepTop, width: plotWidth, height: sleepZoneHeight) }
     var bandRect: CGRect { CGRect(x: x0, y: bandTop, width: plotWidth, height: bandHeight) }
     var ctxRect: CGRect { CGRect(x: x0, y: ctxTop, width: plotWidth, height: ctxHeight) }
 
@@ -90,6 +98,12 @@ private struct ChartLayout {
         return scaleTop + labelInset + CGFloat(frac) * usable
     }
 
+    func sleepY(_ hours: Double) -> CGFloat {
+        let inset: CGFloat = 9
+        let frac = 1 - min(max(hours, 0), sleepMax) / max(sleepMax, 1)
+        return sleepTop + inset + CGFloat(frac) * (sleepZoneHeight - inset * 2)
+    }
+
     func eventY(_ layer: TimelineLayer) -> CGFloat {
         bandTop + CGFloat(layer.eventRowFraction) * bandHeight
     }
@@ -105,6 +119,14 @@ struct UnifiedTimeline: View {
     let date: Date
     let snapshot: TimelineSnapshot
     @Binding var span: TimelineSpan
+    /// The day under the last tap in a week or month view, for the parent's
+    /// own "Day" button to open. Nil in a day view and once the tap is gone.
+    @Binding var tappedDay: Date?
+    let onSelectDay: (Date) -> Void
+    /// Swipe (or arrow) past the edge of the window: ask for the previous
+    /// (-1) or next (+1) period, so a month can be paged through into the
+    /// months around it.
+    let onStep: (Int) -> Void
     let onEdit: (DiaryEditTarget, Date) -> Void
 
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -132,11 +154,17 @@ struct UnifiedTimeline: View {
         date: Date,
         snapshot: TimelineSnapshot,
         span: Binding<TimelineSpan>,
+        tappedDay: Binding<Date?>,
+        onSelectDay: @escaping (Date) -> Void,
+        onStep: @escaping (Int) -> Void,
         onEdit: @escaping (DiaryEditTarget, Date) -> Void
     ) {
         self.date = date
         self.snapshot = snapshot
         self._span = span
+        self._tappedDay = tappedDay
+        self.onSelectDay = onSelectDay
+        self.onStep = onStep
         self.onEdit = onEdit
     }
 
@@ -177,7 +205,16 @@ struct UnifiedTimeline: View {
     // MARK: - Domain & window
 
     private var interval: DateInterval {
-        calendar.dateInterval(of: span.calendarComponent, for: date)
+        guard let component = span.calendarComponent else {
+            // All time runs from the first record to the end of today; until
+            // the snapshot has been built, fall back to the month in view.
+            if snapshot.intervalStart > .distantPast, snapshot.intervalEnd > snapshot.intervalStart {
+                return DateInterval(start: snapshot.intervalStart, end: snapshot.intervalEnd)
+            }
+            return calendar.dateInterval(of: .month, for: date)
+                ?? DateInterval(start: calendar.startOfDay(for: date), duration: 24 * 3600)
+        }
+        return calendar.dateInterval(of: component, for: date)
             ?? DateInterval(start: calendar.startOfDay(for: date), duration: 24 * 3600)
     }
 
@@ -217,13 +254,43 @@ struct UnifiedTimeline: View {
 
     private func zoomBy(_ factor: Double) { setSpan(visibleLength * factor) }
 
+    /// Slides the zoomed window; at the end of the period (or when not zoomed
+    /// at all) it moves on to the neighbouring period instead.
     private func pan(_ direction: Double) {
-        guard isZoomed else { return }
-        let start = (scrollStart ?? domain.lowerBound).addingTimeInterval(direction * visibleLength * 0.3)
-        let half = visibleLength
         let lowest = domain.lowerBound
-        let highest = max(lowest, domain.upperBound.addingTimeInterval(-half))
-        scrollStart = min(max(start, lowest), highest)
+        let highest = max(lowest, domain.upperBound.addingTimeInterval(-visibleLength))
+        let current = scrollStart ?? lowest
+        if isZoomed {
+            let atEdge = direction > 0 ? current >= highest.addingTimeInterval(-1) : current <= lowest.addingTimeInterval(1)
+            if !atEdge {
+                let start = current.addingTimeInterval(direction * visibleLength * 0.3)
+                scrollStart = min(max(start, lowest), highest)
+                return
+            }
+        }
+        step(direction > 0 ? 1 : -1)
+    }
+
+    private func step(_ direction: Int) {
+        guard span != .all else { return }
+        onStep(direction)
+    }
+
+    /// A clear horizontal swipe on the chart pages to the neighbouring
+    /// period — from an unzoomed window, or from a zoomed one already at
+    /// that end. Anything else was a pan inside the window.
+    private func handleBrowseSwipe(translation: CGSize, anchor: Date?) {
+        guard span != .all,
+              abs(translation.width) > 70,
+              abs(translation.width) > abs(translation.height) * 1.5 else { return }
+        let direction = translation.width < 0 ? 1 : -1
+        if isZoomed, let anchor {
+            let lowest = domain.lowerBound
+            let highest = max(lowest, domain.upperBound.addingTimeInterval(-visibleLength))
+            let atEdge = direction > 0 ? anchor >= highest.addingTimeInterval(-1) : anchor <= lowest.addingTimeInterval(1)
+            guard atEdge else { return }
+        }
+        step(direction)
     }
 
     private func clearSelection() {
@@ -268,7 +335,21 @@ struct UnifiedTimeline: View {
         return TimelineLayer.numericLayers.filter(isOn).flatMap { snapshot.dailyAverages[$0] ?? [] }
     }
     private var eventPoints: [TimelineMark] { marks.filter(\.layer.isEvent) }
-    private var bandMarks: [TimelineMark] { marks.filter(\.layer.isInterval) }
+    /// Week and month draw sleep as a line of hours, not as bands.
+    private var bandMarks: [TimelineMark] {
+        marks.filter { $0.layer.isInterval && !($0.layer == .sleep && span != .day) }
+    }
+
+    private var showsSleepLine: Bool { span != .day && isOn(.sleep) && !snapshot.sleepDays.isEmpty }
+
+    /// Room for the longest day, and never squeezed below a ten-hour scale.
+    private var sleepMax: Double {
+        max(10, ceil(snapshot.sleepDays.compactMap(\.value).max() ?? 0))
+    }
+
+    private func layout(size: CGSize) -> ChartLayout {
+        ChartLayout(size: size, win: win, compact: isCompact, sleepLine: showsSleepLine, sleepMax: sleepMax)
+    }
 
     /// Where each event mark actually draws. Several emotions felt at once
     /// are one entry recorded at one instant — several marks sharing the
@@ -366,6 +447,9 @@ struct UnifiedTimeline: View {
         .preference(key: TimelineBlocksScrollKey.self, value: isSelecting)
         .onChange(of: date) { _, _ in clearSelection() }
         .onChange(of: span) { _, _ in clearSelection() }
+        .onChange(of: cursor) { _, newValue in
+            tappedDay = span == .day ? nil : newValue.map { calendar.startOfDay(for: $0) }
+        }
     }
 
     private var enabledChartLayers: [TimelineLayer] {
@@ -418,7 +502,12 @@ struct UnifiedTimeline: View {
             ForEach(TimelineSpan.allCases) { item in
                 let selected = item == span
                 Button {
-                    span = item
+                    // A tap on a week or month opens that very day.
+                    if item == .day, span != .day, let cursor {
+                        onSelectDay(calendar.startOfDay(for: cursor))
+                    } else {
+                        span = item
+                    }
                 } label: {
                     Text(item.title)
                         .font(.lora(11.5, weight: selected ? .semibold : .regular))
@@ -440,13 +529,13 @@ struct UnifiedTimeline: View {
     private var navCluster: some View {
         HStack(spacing: 2) {
             navButton("chevron.left", label: L("Назад", "Back")) { pan(-1) }
-                .disabled(!isZoomed || isSelecting)
+                .disabled(isSelecting || (span == .all && !isZoomed))
             navButton("minus", label: L("Отдалить", "Zoom out")) { zoomBy(1.55) }
                 .disabled(!isZoomed || isSelecting)
             navButton("plus", label: L("Приблизить", "Zoom in")) { zoomBy(0.65) }
                 .disabled(isSelecting)
             navButton("chevron.right", label: L("Вперёд", "Forward")) { pan(1) }
-                .disabled(!isZoomed || isSelecting)
+                .disabled(isSelecting || (span == .all && !isZoomed))
         }
         .padding(3)
         .background(Capsule().fill(ChartPalette.pillFill))
@@ -614,7 +703,7 @@ struct UnifiedTimeline: View {
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             GeometryReader { proxy in
-                let layout = ChartLayout(size: proxy.size, win: win, compact: isCompact)
+                let layout = layout(size: proxy.size)
                 ZStack(alignment: .topLeading) {
                     Canvas { context, _ in
                         draw(context: &context, layout: layout)
@@ -623,7 +712,7 @@ struct UnifiedTimeline: View {
 
                     TimelineChartGestures(
                         mode: isSelecting ? .select : .browse,
-                        panEnabled: isSelecting || isZoomed,
+                        panEnabled: isSelecting || isZoomed || span != .all,
                         pinchEnabled: !isSelecting && canZoom,
                         onTap: { handleTap(at: $0, layout: layout) },
                         onPanChanged: { point, translation in
@@ -637,7 +726,9 @@ struct UnifiedTimeline: View {
                             if isSelecting {
                                 handleSelectDragEnd(at: point, translation: translation, layout: layout)
                             } else {
+                                let anchor = panAnchor
                                 panAnchor = nil
+                                handleBrowseSwipe(translation: translation, anchor: anchor)
                             }
                         },
                         onPinchChanged: { scale, center in
@@ -652,7 +743,7 @@ struct UnifiedTimeline: View {
                     .frame(width: proxy.size.width, height: layout.totalHeight)
                 }
             }
-            .frame(height: ChartLayout(size: .zero, win: win, compact: isCompact).totalHeight)
+            .frame(height: layout(size: .zero).totalHeight)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(isSelecting ? AppTheme.forest.opacity(0.55) : Color.clear, lineWidth: 1.5)
@@ -727,6 +818,15 @@ struct UnifiedTimeline: View {
             }
             return best?.0
         }
+        if layout.sleepLine, layout.sleepRect.insetBy(dx: -10, dy: -10).contains(point) {
+            var best: (TimelineMark, CGFloat)?
+            for mark in snapshot.sleepDays {
+                let p = CGPoint(x: layout.x(mark.date), y: layout.sleepY(mark.value ?? 0))
+                let d = hypot(p.x - point.x, p.y - point.y)
+                if d < 26, best == nil || d < best!.1 { best = (mark, d) }
+            }
+            return best?.0
+        }
         if layout.bandRect.insetBy(dx: -10, dy: -10).contains(point) {
             var best: (TimelineMark, CGFloat)?
             for (mark, p) in eventPositions(layout: layout) {
@@ -746,6 +846,7 @@ struct UnifiedTimeline: View {
         // Zone backgrounds.
         context.fill(Path(roundedRect: layout.scaleRect, cornerRadius: 10), with: .color(ChartPalette.scaleZone))
         context.fill(Path(roundedRect: layout.bandRect, cornerRadius: 10), with: .color(ChartPalette.bandZone))
+        if layout.sleepLine { drawSleepLine(context: &context, layout: layout) }
         context.fill(Path(roundedRect: layout.ctxRect, cornerRadius: 7), with: .color(ChartPalette.ctxZone))
 
         // Y gridlines + labels for the 1–5 scale.
@@ -786,6 +887,8 @@ struct UnifiedTimeline: View {
                 ctx.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(band.color.opacity(0.24)))
             }
             for (mark, p) in eventPositions(layout: layout) {
+                // A long window holds far more marks than fit on screen.
+                guard p.x > layout.x0 - 14, p.x < layout.x1 + 14 else { continue }
                 if let art = mark.art {
                     ctx.draw(Image(art), in: CGRect(x: p.x - 12, y: p.y - 12, width: 24, height: 24))
                 } else {
@@ -903,6 +1006,41 @@ struct UnifiedTimeline: View {
         }
     }
 
+    /// Hours slept per day as one unbroken line, so a short night shows as a
+    /// dip. The scale marks are plain reference points, not a target.
+    private func drawSleepLine(context: inout GraphicsContext, layout: ChartLayout) {
+        context.fill(Path(roundedRect: layout.sleepRect, cornerRadius: 10), with: .color(ChartPalette.scaleZone))
+        for hours in stride(from: 4.0, through: layout.sleepMax, by: 4.0) {
+            let y = layout.sleepY(hours)
+            var line = Path()
+            line.move(to: CGPoint(x: layout.x0, y: y))
+            line.addLine(to: CGPoint(x: layout.x1, y: y))
+            context.stroke(line, with: .color(ChartPalette.gridLine), lineWidth: 1)
+            context.draw(
+                Text(L("\(Int(hours)) ч", "\(Int(hours)) h")).font(.lora(10)).foregroundStyle(AppTheme.inkSoft),
+                at: CGPoint(x: layout.gutter - 6, y: y), anchor: .trailing
+            )
+        }
+        context.draw(
+            Text(TimelineLayer.sleep.title).font(.lora(9.5)).foregroundStyle(AppTheme.inkSoft.opacity(0.85)),
+            at: CGPoint(x: layout.gutter - 6, y: layout.sleepRect.minY + 8), anchor: .trailing
+        )
+        context.drawLayer { ctx in
+            ctx.clip(to: Path(layout.sleepRect))
+            let points = snapshot.sleepDays.map { CGPoint(x: layout.x($0.date), y: layout.sleepY($0.value ?? 0)) }
+            if points.count > 1 {
+                let path = smoothPath(points)
+                ctx.stroke(path, with: .color(AppTheme.parchmentCard), lineWidth: 6.4)
+                ctx.stroke(path, with: .color(TimelineLayer.sleep.color), lineWidth: 3)
+            }
+            for p in points {
+                let circle = Path(ellipseIn: CGRect(x: p.x - 4.2, y: p.y - 4.2, width: 8.4, height: 8.4))
+                ctx.fill(circle, with: .color(TimelineLayer.sleep.color))
+                ctx.stroke(circle, with: .color(AppTheme.parchmentCard), lineWidth: 1.6)
+            }
+        }
+    }
+
     /// Catmull-Rom → cubic Bézier, matching the smooth curve style of the design.
     private func smoothPath(_ points: [CGPoint]) -> Path {
         var path = Path()
@@ -948,15 +1086,29 @@ struct UnifiedTimeline: View {
             }
         } else {
             let dayCount = length / 86400
-            let every = dayCount > 16 ? 3 : 1
-            var idx = 0
-            var day = calendar.startOfDay(for: win.lowerBound)
-            while day < win.upperBound {
-                if idx % every == 0 {
-                    out.append(Tick(x: layout.x(day), label: DateFormatting.compactDate(day)))
+            if dayCount > 62 {
+                // Months, thinned so they never crowd: about seven labels.
+                let every = max(1, Int(ceil(dayCount / 30 / 7)))
+                var idx = 0
+                var month = calendar.dateInterval(of: .month, for: win.lowerBound)?.start ?? calendar.startOfDay(for: win.lowerBound)
+                while month < win.upperBound {
+                    if idx % every == 0 {
+                        out.append(Tick(x: layout.x(month), label: month.formatted(.dateTime.month(.abbreviated).year(.twoDigits).locale(AppLanguage.current.locale))))
+                    }
+                    idx += 1
+                    month = calendar.date(byAdding: .month, value: 1, to: month) ?? win.upperBound
                 }
-                idx += 1
-                day = calendar.date(byAdding: .day, value: 1, to: day) ?? win.upperBound
+            } else {
+                let every = dayCount > 16 ? 3 : 1
+                var idx = 0
+                var day = calendar.startOfDay(for: win.lowerBound)
+                while day < win.upperBound {
+                    if idx % every == 0 {
+                        out.append(Tick(x: layout.x(day), label: DateFormatting.compactDate(day)))
+                    }
+                    idx += 1
+                    day = calendar.date(byAdding: .day, value: 1, to: day) ?? win.upperBound
+                }
             }
         }
         return out.filter { $0.x >= layout.x0 - 1 && $0.x <= layout.x1 + 1 }
@@ -995,6 +1147,23 @@ struct UnifiedTimeline: View {
                         Text(String(format: "%.1f", value))
                             .font(.lora(12, weight: .semibold))
                             .foregroundStyle(layer.textColor)
+                    } else {
+                        Text("—").font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+                    }
+                }
+            }
+            if showsSleepLine {
+                let day = snapshot.sleepDays.first { calendar.isDate($0.date, inSameDayAs: cursor) }
+                HStack(spacing: 6) {
+                    Circle().fill(TimelineLayer.sleep.color).frame(width: 7, height: 7)
+                    Text(TimelineLayer.sleep.title)
+                        .font(.lora(11))
+                        .foregroundStyle(AppTheme.ink)
+                    Spacer(minLength: 4)
+                    if let hours = day?.value {
+                        Text(DurationFormatting.compact(hours * 3600))
+                            .font(.lora(12, weight: .semibold))
+                            .foregroundStyle(TimelineLayer.sleep.textColor)
                     } else {
                         Text("—").font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
                     }
@@ -1072,7 +1241,11 @@ struct UnifiedTimeline: View {
     private var footTitle: String {
         if rangeSelection != nil { return L("Выделено", "Selected") }
         if span == .day { return isZoomed ? L("Видимый отрезок", "Visible range") : L("Весь день", "Whole day") }
-        return span == .week ? L("Неделя целиком", "Whole week") : L("Месяц целиком", "Whole month")
+        switch span {
+        case .week: return L("Неделя целиком", "Whole week")
+        case .all: return L("Всё время", "All time")
+        default: return L("Месяц целиком", "Whole month")
+        }
     }
 
     private var footSub: String {
@@ -1105,7 +1278,17 @@ struct UnifiedTimeline: View {
         ForEach(TimelineLayer.numericLayers.filter(isOn)) { layer in
             footerPill(dotColor: layer.color, title: layer.title, value: average(layer, in: range).map { String(format: "%.1f", $0) } ?? "—", valueColor: layer.textColor)
         }
-        if isOn(.sleep) {
+        if isOn(.sleep), span != .day {
+            // A total over a week says nothing; what a day usually held does.
+            let days = snapshot.sleepDays.filter { $0.date >= range.lowerBound && $0.date <= range.upperBound }
+            let mean = days.isEmpty ? nil : days.reduce(0.0) { $0 + ($1.value ?? 0) } / Double(days.count)
+            footerPill(
+                dotColor: TimelineLayer.sleep.color,
+                title: L("Сон в среднем", "Sleep, average"),
+                value: mean.map { DurationFormatting.compact($0 * 3600) } ?? "—",
+                valueColor: TimelineLayer.sleep.textColor
+            )
+        } else if isOn(.sleep) {
             let mins = bandMarks.filter { $0.layer == .sleep }
                 .reduce(0.0) { $0 + max(0, min($1.end ?? $1.date, range.upperBound).timeIntervalSince(max($1.date, range.lowerBound))) }
             footerPill(dotColor: TimelineLayer.sleep.color, title: L("Сон", "Sleep"), value: mins > 0 ? DurationFormatting.compact(mins) : "—", valueColor: TimelineLayer.sleep.textColor)

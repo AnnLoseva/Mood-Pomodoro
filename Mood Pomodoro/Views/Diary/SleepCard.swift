@@ -99,7 +99,7 @@ struct SleepCard: View {
             if !isAvailable {
                 DiaryNote(text: L("Apple Health недоступен на этом устройстве.", "Apple Health isn't available on this device."))
             } else if isConnected, needsAdditionalPermission {
-                DiaryNote(text: L("Приложение теперь умеет читать ещё и дни цикла — нажми «Обновить», чтобы Health спросил про них.", "The app can now also read cycle days — tap “Refresh” and Health will ask about them."))
+                DiaryNote(text: L("Приложение теперь умеет читать ещё и дни цикла с таблетками — нажми «Обновить», чтобы Health спросил про них.", "The app can now also read cycle days and medication — tap “Refresh” and Health will ask about them."))
             } else if isConnected {
                 DiaryNote(text: L("Сон и дни цикла читаются из Apple Health на этом устройстве и не выгружаются в iCloud — поэтому на iPad они появятся, только если Health есть и там.", "Sleep and cycle days are read from Apple Health on this device and never uploaded to iCloud — so they show on the iPad only if Health has them there too."))
             }

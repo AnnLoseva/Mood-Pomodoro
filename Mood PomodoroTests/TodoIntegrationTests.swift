@@ -363,6 +363,32 @@ struct TodoIntegrationTests {
         #expect(rig.transport.delivered.count == 1)
     }
 
+    @Test func createDoneLinkCarriesTheContractEnvelopeAndIsStable() throws {
+        let sessionID = UUID()
+        let endedAt = Date(timeIntervalSince1970: 1_790_000_400)
+        let event = TodoIntegrationEvent.createDoneRequested(sessionID: sessionID, title: "Йога & растяжка", endedAt: endedAt, at: endedAt)
+
+        let url = try #require(URLSchemeTodoTransport.createDoneURL(for: event))
+        #expect(url.scheme == "calmday")
+        #expect(url.host == "integration")
+
+        let data = try #require(IntegrationEventURL.envelopeData(from: url))
+        let envelope = try IntegrationCoding.decode(data)
+        #expect(envelope.origin.app == "moodpomodoro")
+        guard case .createDoneTaskRequested(let requestID, let title, let occurredAt, let session) = envelope.payload else {
+            Issue.record("wrong payload")
+            return
+        }
+        #expect(requestID == sessionID)
+        #expect(title == "Йога & растяжка")
+        #expect(occurredAt == endedAt)
+        #expect(session == nil)
+
+        // Pressing again re-sends the same event.
+        let again = try #require(URLSchemeTodoTransport.createDoneURL(for: event))
+        #expect(again == url)
+    }
+
     @Test func aDeclinedOfferLeavesTheSessionOnlyHere() throws {
         let transport = StandInTransport()
         transport.supported = [.createDoneTaskRequested]

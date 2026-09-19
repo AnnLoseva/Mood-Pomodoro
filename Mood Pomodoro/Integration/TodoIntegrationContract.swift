@@ -15,14 +15,12 @@ import Foundation
 /// * it accepts `calmday://complete?taskId=<UUID>`, which marks the task done
 ///   and does nothing if it already is (`DeepLink`, `RootView.handle`).
 ///
-/// Nothing else is defined on its side: there is no event format, no
-/// acknowledgement, no shared container in use (its `AppGroup` is a
-/// placeholder that no entitlement backs), and no link that opens a single
-/// task. Event types beyond completion — and the payload fields below —
-/// are therefore **provisional**: they follow the names in the product brief
-/// and stay behind `canDeliver`, so nothing pretends to reach an app that
-/// cannot yet receive it. Replace them with the ToDo List contract when it
-/// is published; the queue and the UI do not change.
+/// ToDo List has since published its contract
+/// (`docs/MOOD_POMODORO_INTEGRATION.md`, shared file `MoodPomodoroContract.swift`,
+/// copied here byte for byte). Of it, only `createDoneTaskRequested` over the
+/// `calmday://integration` link is wired up. The session events and the
+/// App Group / CloudKit channels are not, so those stay behind `canDeliver`
+/// and nothing pretends to reach an app that cannot yet receive it.
 enum TodoIntegrationContract {
     /// Version of the event envelope this app writes to its outbox.
     static let schemaVersion = 1
@@ -47,8 +45,8 @@ enum TodoIntegrationContract {
     /// Whether the other app can receive this kind of event *today*.
     static func canDeliver(_ type: TodoIntegrationEventType) -> Bool {
         switch type {
-        case .taskCompletionRequested: return true
-        case .createDoneTaskRequested, .sessionFinished, .sessionUpdated, .sessionDeleted: return false
+        case .taskCompletionRequested, .createDoneTaskRequested: return true
+        case .sessionFinished, .sessionUpdated, .sessionDeleted: return false
         }
     }
 }

@@ -14,7 +14,7 @@ import SwiftData
 /// (or synced from the other device) re-derives the day, the month and the
 /// calendar colors on its own.
 ///
-/// Shared by iPhone and iPad (like История and Аналитика); the month layout
+/// Shared by iPhone and iPad (like Аналитика); the month layout
 /// spreads into two columns at regular width instead of getting its own view.
 struct DiaryView: View {
     private enum Mode: String, CaseIterable, Identifiable {
@@ -54,6 +54,12 @@ struct DiaryView: View {
     @State private var showExport = false
     @State private var editingDay: Date?
     @State private var freezeDiaryScroll = false
+    @State private var sessionSheet: SessionSheetID?
+    @State private var showSearch = false
+    /// Where a search result should go once the search sheet has closed.
+    @State private var pendingSearchRoute: AnalyticsRoute?
+
+    private struct SessionSheetID: Identifiable { let id: UUID }
 
     private let calendar = Calendar.current
 
@@ -86,7 +92,10 @@ struct DiaryView: View {
                         ScrollView {
                             VStack(spacing: 16) {
                                 stepper
-                                addMenu
+                                HStack(spacing: 10) {
+                                    addMenu
+                                    searchButton
+                                }
                                 DiaryPeriodContent(
                                     selectedDate: selectedDate,
                                     isDayMode: mode == .day,
@@ -97,6 +106,12 @@ struct DiaryView: View {
                                     onQuickMood: { showQuickCheckIn = true },
                                     onAdd: { entrySheet = $0 },
                                     onEdit: { target, day in
+                                        // A session opens its own details (the same
+                                        // screen everywhere); everything else its form.
+                                        if case .session(let id) = target {
+                                            sessionSheet = SessionSheetID(id: id)
+                                            return
+                                        }
                                         editingDay = day
                                         entrySheet = DiaryEntrySheet(editing: target)
                                     },
@@ -129,6 +144,23 @@ struct DiaryView: View {
             }
             .sheet(isPresented: $showExport) {
                 ExportSheet()
+            }
+            .sheet(item: $sessionSheet) { item in
+                SessionDetailSheet(sessionID: item.id)
+            }
+            .sheet(isPresented: $showSearch, onDismiss: openPendingSearchRoute) {
+                NavigationStack {
+                    AnalyticsSearchView(store: nil, onOpen: { route in
+                        pendingSearchRoute = route
+                        showSearch = false
+                    })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(L("Закрыть", "Close")) { showSearch = false }.foregroundStyle(AppTheme.forest)
+                        }
+                    }
+                }
+                .goblinChrome()
             }
             // A view rebuilt for another day or span starts with no tap.
             .onChange(of: selectedDate) { _, _ in tappedDay = nil }
@@ -212,6 +244,21 @@ struct DiaryView: View {
         .accessibilityLabel(L("Добавить запись", "Add entry"))
     }
 
+    /// Search sits beside "Добавить": finding a record and adding one are the
+    /// two things done to the diary itself.
+    private var searchButton: some View {
+        Button { showSearch = true } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(AppTheme.forest)
+                .frame(width: 44, height: 40)
+                .background(Capsule().fill(AppTheme.parchmentCard))
+                .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1.25))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("Поиск по дневнику и данным", "Search the diary and data"))
+    }
+
     private var stepper: some View {
         DiaryPeriodStepper(
             title: stepperTitle,
@@ -248,6 +295,20 @@ struct DiaryView: View {
 
     private var monthTitle: String {
         selectedDate.formatted(.dateTime.month(.wide).year().locale(AppLanguage.current.locale)).localizedCapitalized
+    }
+
+    private func openPendingSearchRoute() {
+        guard let route = pendingSearchRoute else { return }
+        pendingSearchRoute = nil
+        switch route {
+        case .day(let day):
+            selectedDate = day
+            timelineSpan = .day
+        case .session(let id):
+            sessionSheet = SessionSheetID(id: id)
+        default:
+            tabs.openAnalytics(route)
+        }
     }
 
     private func shift(by amount: Int) {

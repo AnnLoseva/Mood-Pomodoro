@@ -20,15 +20,23 @@ extension EnvironmentValues {
 @Observable
 final class AppTabs {
     enum Tab: Hashable {
-        case today, diary, history, analytics
+        case today, diary, analytics
     }
 
     var selected: Tab = .today
     var diaryDay: Date?
+    /// A place inside Аналитика another tab asked to open (the diary's
+    /// search, for one). The analytics tab takes it and clears it.
+    var pendingAnalyticsRoute: AnalyticsRoute?
 
     func openDiary(day: Date) {
         diaryDay = day
         selected = .diary
+    }
+
+    func openAnalytics(_ route: AnalyticsRoute) {
+        pendingAnalyticsRoute = route
+        selected = .analytics
     }
 }
 
@@ -57,9 +65,16 @@ struct ContentView: View {
                 tabs.selected = .today
             }
         }
-        .sheet(item: Binding(get: { integration.prompt }, set: { integration.prompt = $0 })) { prompt in
-            TodoSessionPromptSheet(prompt: prompt)
+        // A small card, never a window: after a session it offers the two optional actions and
+        // leaves by itself. It stays out of the way of a session that is running.
+        .overlay(alignment: .bottom) {
+            if let prompt = integration.prompt, sessionManager.activeSession == nil {
+                TodoSessionCard(prompt: prompt)
+                    .padding(.bottom, horizontalSizeClass == .regular ? 16 : 64)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: integration.prompt?.id)
     }
 }
 
@@ -75,9 +90,6 @@ private struct iPhoneRootView: View {
             DiaryView()
                 .tabItem { Label(L("Дневник", "Diary"), systemImage: "text.book.closed.fill") }
                 .tag(AppTabs.Tab.diary)
-            HistoryView()
-                .tabItem { Label(L("История", "History"), systemImage: "book.closed.fill") }
-                .tag(AppTabs.Tab.history)
             AnalyticsView()
                 .tabItem { Label(L("Аналитика", "Analytics"), systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(AppTabs.Tab.analytics)
@@ -89,14 +101,13 @@ private struct iPhoneRootView: View {
 
 private struct iPadRootView: View {
     enum SidebarSection: String, Identifiable, CaseIterable {
-        case today, diary, history, analytics
+        case today, diary, analytics
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .today: return L("Сейчас", "Now")
             case .diary: return L("Дневник", "Diary")
-            case .history: return L("История", "History")
             case .analytics: return L("Аналитика", "Analytics")
             }
         }
@@ -105,7 +116,6 @@ private struct iPadRootView: View {
             switch self {
             case .today: return "leaf.fill"
             case .diary: return "text.book.closed.fill"
-            case .history: return "book.closed.fill"
             case .analytics: return "chart.line.uptrend.xyaxis"
             }
         }
@@ -150,7 +160,6 @@ private struct iPadRootView: View {
                 switch selection ?? .today {
                 case .today: DashboardView()
                 case .diary: DiaryView()
-                case .history: HistoryView()
                 case .analytics: AnalyticsView()
                 }
             }
@@ -168,7 +177,6 @@ private struct iPadRootView: View {
             switch selected {
             case .today: selection = .today
             case .diary: selection = .diary
-            case .history: selection = .history
             case .analytics: selection = .analytics
             }
         }

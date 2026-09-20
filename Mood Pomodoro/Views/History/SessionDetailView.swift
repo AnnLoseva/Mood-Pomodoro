@@ -12,6 +12,7 @@ struct SessionDetailView: View {
     let session: FocusSession
 
     @State private var showDeleteConfirm = false
+    @State private var showEditor = false
 
     private var trajectory: [(minutes: Double, mood: Mood)] { AnalyticsService.sessionTrajectory(session) }
 
@@ -44,18 +45,32 @@ struct SessionDetailView: View {
                     .foregroundStyle(AppTheme.ink)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Image(systemName: "trash")
+                HStack(spacing: 4) {
+                    // Only a backdated session has times to correct.
+                    if session.isManualEntry {
+                        Button { showEditor = true } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .foregroundStyle(AppTheme.forest)
+                        .accessibilityLabel(L("Изменить время и название", "Edit times and name"))
+                    }
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .foregroundStyle(AppTheme.rustDeep)
+                    .accessibilityLabel(L("Удалить сессию", "Delete session"))
                 }
-                .foregroundStyle(AppTheme.rustDeep)
             }
+        }
+        .sheet(isPresented: $showEditor) {
+            DiaryEntrySheetView(sheet: .activity(editing: session.id), day: session.startDate)
         }
         .goblinConfirmation(
             isPresented: $showDeleteConfirm,
             title: L("Удалить сессию?", "Delete the session?"),
-            message: L("Она исчезнет из истории и больше не попадёт в аналитику.", "It will disappear from history and won't count in analytics anymore."),
+            message: L("Она исчезнет из дневника и больше не попадёт в аналитику.", "It will disappear from the diary and won't count in analytics anymore."),
             confirmTitle: L("Удалить", "Delete"),
             isDestructive: true,
             onConfirm: {
@@ -168,5 +183,39 @@ struct SessionDetailView: View {
         }
         .padding(18)
         .parchmentCard()
+    }
+}
+
+/// The session's details as a sheet, for the places that have no navigation
+/// stack of their own to push onto — the diary's chart and day list. It is
+/// the same `SessionDetailView`, so type editing and delete-with-confirmation
+/// behave identically wherever it is opened from.
+struct SessionDetailSheet: View {
+    let sessionID: UUID
+    @Environment(SessionManager.self) private var sessionManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let session = sessionManager.session(withID: sessionID) {
+                    SessionDetailView(session: session)
+                } else {
+                    ZStack {
+                        ForestBackdrop()
+                        Text(L("Эта сессия уже удалена.", "This session has been deleted."))
+                            .font(.lora(15))
+                            .foregroundStyle(AppTheme.inkSoft)
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L("Закрыть", "Close")) { dismiss() }
+                        .foregroundStyle(AppTheme.forest)
+                }
+            }
+        }
+        .goblinChrome()
     }
 }

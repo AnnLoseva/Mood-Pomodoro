@@ -58,15 +58,32 @@ enum PersistenceController {
         fatalError("Unable to open diary store. Existing data has been preserved; do not reset the database.")
     }
 
-    private static func attempt(cloudKit: Bool) -> ModelContainer? {
-        // `cloudKitDatabase` defaults to `.automatic` — omitting it is NOT a
-        // local-only store. Tests and the iCloud-unavailable fallback must
-        // pass `.none` explicitly.
-        let configuration = ModelConfiguration(
+    /// The diary's own iCloud container. Named explicitly because the app also has a second
+    /// container (`MoodPomodoroContract.cloudContainerID`) that holds ToDo List events only;
+    /// with two containers in the entitlements `.automatic` would be ambiguous.
+    static let diaryCloudContainerID = "iCloud.AnnaLoseva.Mood-Pomodoro"
+
+    /// The store configuration, pinned on purpose.
+    ///
+    /// `groupContainer: .none` keeps the store where it has always been — the app's own
+    /// container. Without it, SwiftData silently moves the default store into the App Group
+    /// container as soon as the App Group capability exists (which the ToDo List
+    /// integration needs): the app would open a new, empty diary while the real one stays
+    /// behind. The App Group is used only for the integration mailbox.
+    ///
+    /// `cloudKitDatabase` defaults to `.automatic` — omitting it is NOT a local-only store.
+    /// Tests and the iCloud-unavailable fallback must pass `.none` explicitly.
+    static func configuration(cloudKit: Bool) -> ModelConfiguration {
+        ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: cloudKit ? .automatic : .none
+            groupContainer: .none,
+            cloudKitDatabase: cloudKit ? .private(diaryCloudContainerID) : .none
         )
+    }
+
+    private static func attempt(cloudKit: Bool) -> ModelContainer? {
+        let configuration = configuration(cloudKit: cloudKit)
         do {
             return try ModelContainer(for: schema, configurations: [configuration])
         } catch {

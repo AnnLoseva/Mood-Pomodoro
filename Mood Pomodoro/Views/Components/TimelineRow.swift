@@ -37,6 +37,11 @@ enum DiaryEditTarget: Hashable, Sendable {
     /// form as typed ones — the times stay read-only there, the rating
     /// doesn't.
     case sleep(String)
+
+    var isSession: Bool {
+        if case .session = self { return true }
+        return false
+    }
 }
 
 struct TimelineEvent: Identifiable {

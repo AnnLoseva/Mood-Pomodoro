@@ -130,13 +130,16 @@ struct UnifiedTimeline: View {
     let onEdit: (DiaryEditTarget, Date) -> Void
 
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @AppStorage("diary.timeline.layers") private var layersRaw = "mood,sleep,food"
+    @AppStorage("diary.timeline.layers") private var layersRaw = TimelineLayerSelection.defaultRaw
     @AppStorage("diary.timeline.preset") private var presetKeyRaw = ""
     @AppStorage("diary.timeline.dailyAverages") private var showsDailyAverages = true
+    @AppStorage("diary.timeline.sleepStyle") private var sleepStyleRaw = TimelineSleepStyle.line.rawValue
+    @State private var openPanel: ControlPanel?
+    @State private var showHelp = false
     @State private var isSelecting = false
     @State private var cursor: Date?
     @State private var rangeSelection: ClosedRange<Date>?
-    @State private var selectedMark: TimelineMark?
+    @State private var selectedMarks: [TimelineMark] = []
     @State private var dragStartDate: Date?
     @State private var visibleSpan: TimeInterval?
     @State private var scrollStart: Date?
@@ -146,6 +149,17 @@ struct UnifiedTimeline: View {
     @State private var panAnchor: Date?
 
     private var isCompact: Bool { sizeClass == .compact }
+
+    /// Which of the two layer groups is unfolded. Only one at a time, and
+    /// neither by default: the chart comes first.
+    private enum ControlPanel { case lines, marks }
+
+    /// The mark under the last tap (the nearest one). `selectedMarks` holds
+    /// every mark under the fingertip when several lie together.
+    private var selectedMark: TimelineMark? {
+        get { selectedMarks.first }
+        nonmutating set { selectedMarks = newValue.map { [$0] } ?? [] }
+    }
 
     private let calendar = Calendar.current
     private static let minimumSpan: TimeInterval = 15 * 60
@@ -170,21 +184,17 @@ struct UnifiedTimeline: View {
 
     // MARK: - Layers & presets
 
-    private var layers: Set<String> {
-        let parsed = Set(layersRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
-        return parsed.isEmpty ? TimelineLayer.defaultOn : parsed
-    }
+    /// What is on comes from one stored choice. An empty choice means "none":
+    /// a layer switched off stays off, whatever day is opened next.
+    private var selection: TimelineLayerSelection { TimelineLayerSelection(raw: layersRaw) }
+    private var layers: Set<String> { Set(selection.layers.map(\.rawValue)) }
 
-    private func isOn(_ layer: TimelineLayer) -> Bool { layers.contains(layer.rawValue) }
+    private func isOn(_ layer: TimelineLayer) -> Bool { selection.contains(layer) }
 
     private func toggle(_ layer: TimelineLayer) {
-        var current = layers
-        if current.contains(layer.rawValue) {
-            current.remove(layer.rawValue)
-        } else {
-            current.insert(layer.rawValue)
-        }
-        layersRaw = current.sorted().joined(separator: ",")
+        var next = selection
+        next.toggle(layer)
+        layersRaw = next.raw
         presetKeyRaw = ""
         selectedMark = nil
     }
@@ -337,10 +347,14 @@ struct UnifiedTimeline: View {
     private var eventPoints: [TimelineMark] { marks.filter(\.layer.isEvent) }
     /// Week and month draw sleep as a line of hours, not as bands.
     private var bandMarks: [TimelineMark] {
-        marks.filter { $0.layer.isInterval && !($0.layer == .sleep && span != .day) }
+        marks.filter { $0.layer.isInterval && !($0.layer == .sleep && span != .day && sleepStyle == .line) }
     }
 
-    private var showsSleepLine: Bool { span != .day && isOn(.sleep) && !snapshot.sleepDays.isEmpty }
+    private var sleepStyle: TimelineSleepStyle { TimelineSleepStyle(rawValue: sleepStyleRaw) ?? .line }
+
+    private var showsSleepLine: Bool {
+        span != .day && isOn(.sleep) && sleepStyle == .line && !snapshot.sleepDays.isEmpty
+    }
 
     /// Room for the longest day, and never squeezed below a ten-hour scale.
     private var sleepMax: Double {
@@ -389,29 +403,17 @@ struct UnifiedTimeline: View {
         return snapshot.numericGroups[layer] ?? []
     }
 
-    private func valueAt(_ layer: TimelineLayer, _ time: Date, snap: Bool = false) -> Double? {
-        // The groups are already sorted and precomputed once per snapshot —
-        // reusing them here avoids re-filtering and re-sorting the whole
-        // mark list on every call, which runs on every canvas redraw (i.e.
-        // every frame of a pan/pinch gesture).
-        let groups = numericGroups(for: layer)
-        for group in groups {
-            for (a, b) in zip(group, group.dropFirst()) {
-                let gap = b.date.timeIntervalSince(a.date)
-                if time >= a.date && time <= b.date, gap > 0 {
-                    let k = time.timeIntervalSince(a.date) / gap
-                    return (a.value ?? 0) + ((b.value ?? 0) - (a.value ?? 0)) * k
-                }
-            }
-        }
-        guard snap else { return nil }
-        let window: TimeInterval = span == .day ? 20 * 60 : 12 * 3600
-        let pts = groups.flatMap { $0 }
-        if let nearest = pts.min(by: { abs($0.date.timeIntervalSince(time)) < abs($1.date.timeIntervalSince(time)) }),
-           abs(nearest.date.timeIntervalSince(time)) <= window {
-            return nearest.value
-        }
-        return nil
+    /// What the chart says about one line at `time`, and how sure it is:
+    /// a record, a stretch of line between two records, the nearest record,
+    /// or (week/month) that day's mean. See `TimelineInspection.reading`.
+    private func reading(_ layer: TimelineLayer, at time: Date) -> TimelineValueReading? {
+        TimelineInspection.reading(
+            groups: numericGroups(for: layer),
+            daily: usesDailyAverages,
+            at: time,
+            nearWindow: span == .day ? 20 * 60 : 12 * 3600,
+            calendar: calendar
+        )
     }
 
     private var contextDays: [DayAggregate] { snapshot.contextDays }
@@ -421,8 +423,6 @@ struct UnifiedTimeline: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            presetsRow
-            chipsRow
             if enabledChartLayers.isEmpty && !isOn(.context) {
                 Text(L("Включи хотя бы один слой.", "Turn on at least one layer."))
                     .font(.lora(13))
@@ -473,34 +473,51 @@ struct UnifiedTimeline: View {
                 Text(L("Общий график", "Timeline"))
                     .font(.lora(16, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Text(periodCaption)
                     .font(.lora(11))
                     .foregroundStyle(AppTheme.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // The whole always-visible control surface: period and settings,
+            // then the two layer groups. Everything else is one tap deeper.
             if isCompact {
-                FlowLayout(spacing: 8) {
-                    spanPicker
-                    if canZoom { navCluster }
-                    if span != .day { averagesToggle }
-                    selectToggle
+                HStack(spacing: 8) {
+                    spanMenu
+                    Spacer(minLength: 0)
+                    settingsMenu
+                }
+                HStack(spacing: 8) {
+                    panelButton(.lines)
+                    panelButton(.marks)
                 }
             } else {
                 HStack(spacing: 8) {
-                    spanPicker
-                    if canZoom { navCluster }
-                    if span != .day { averagesToggle }
-                    selectToggle
+                    spanMenu
+                    panelButton(.lines).frame(maxWidth: 220)
+                    panelButton(.marks).frame(maxWidth: 220)
                     Spacer(minLength: 0)
+                    settingsMenu
                 }
             }
+            if let openPanel { panelContent(openPanel) }
+            stateChips
+        }
+        .alert(L("Как пользоваться графиком", "Using the chart"), isPresented: $showHelp) {
+            Button(L("Понятно", "Got it"), role: .cancel) {}
+        } message: {
+            Text(L(
+                "Нажми на график — увидишь значения слоёв в этой точке. Один палец двигает приближенный график, два пальца приближают. «Выделить диапазон» в меню ⋯ включает выделение перетаскиванием.",
+                "Tap the chart to see each layer's value there. One finger pans a zoomed chart, two fingers zoom. “Select a range” in the ⋯ menu turns on drag selection."
+            ))
         }
     }
 
-    private var spanPicker: some View {
-        HStack(spacing: 3) {
+    // MARK: - Period & settings
+
+    private var spanMenu: some View {
+        Menu {
             ForEach(TimelineSpan.allCases) { item in
-                let selected = item == span
                 Button {
                     // A tap on a week or month opens that very day.
                     if item == .day, span != .day, let cursor {
@@ -509,176 +526,217 @@ struct UnifiedTimeline: View {
                         span = item
                     }
                 } label: {
-                    Text(item.title)
-                        .font(.lora(11.5, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? AppTheme.parchmentCard : AppTheme.ink)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(selected ? AppTheme.forest : Color.clear))
+                    if item == span { Label(item.title, systemImage: "checkmark") } else { Text(item.title) }
                 }
-                .buttonStyle(.plain)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(span.title).font(.lora(13, weight: .semibold))
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(AppTheme.forestDeep)
+            .padding(.horizontal, 13)
+            .frame(minHeight: 40)
+            .background(Capsule().fill(ChartPalette.pillFill))
+            .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
+        }
+        .accessibilityLabel(L("Период графика", "Chart period"))
+        .accessibilityValue(span.title)
+    }
+
+    /// Zoom, range selection, daily averages, presets, help — the actions
+    /// that used to sit in the header all the time.
+    private var settingsMenu: some View {
+        Menu {
+            Section(L("Масштаб", "Zoom")) {
+                Button { zoomBy(0.65) } label: { Label(L("Приблизить", "Zoom in"), systemImage: "plus.magnifyingglass") }
+                    .disabled(!canZoom || isSelecting)
+                Button { zoomBy(1.55) } label: { Label(L("Отдалить", "Zoom out"), systemImage: "minus.magnifyingglass") }
+                    .disabled(!isZoomed || isSelecting)
+                Button { resetZoom() } label: { Label(L("Сбросить масштаб", "Reset zoom"), systemImage: "arrow.up.left.and.down.right.magnifyingglass") }
+                    .disabled(!isZoomed)
+                if isZoomed {
+                    Button { pan(-1) } label: { Label(L("Сдвинуть назад", "Move back"), systemImage: "chevron.left") }
+                    Button { pan(1) } label: { Label(L("Сдвинуть вперёд", "Move forward"), systemImage: "chevron.right") }
+                }
+            }
+            Section(L("Выделение", "Selection")) {
+                Toggle(isOn: Binding(get: { isSelecting }, set: { setSelecting($0) })) {
+                    Label(L("Выделить диапазон", "Select a range"), systemImage: "rectangle.dashed")
+                }
+                if hasRangeSelection {
+                    Button(action: clearRange) { Label(L("Сбросить выделение", "Clear selection"), systemImage: "xmark") }
+                }
+            }
+            if span != .day {
+                Toggle(isOn: Binding(get: { showsDailyAverages }, set: { showsDailyAverages = $0; selectedMark = nil })) {
+                    Label(L("Среднее за день", "Daily average"), systemImage: "sum")
+                }
+            }
+            Menu {
+                ForEach(TimelinePreset.all) { preset in
+                    Button { pickPreset(preset) } label: {
+                        if activePresetKey == preset.key { Label(preset.title, systemImage: "checkmark") } else { Text(preset.title) }
+                    }
+                }
+            } label: { Label(L("Наборы слоёв", "Layer sets"), systemImage: "square.stack.3d.up") }
+            Button { showHelp = true } label: { Label(L("Как пользоваться графиком", "Using the chart"), systemImage: "questionmark.circle") }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(AppTheme.forestDeep)
+                .frame(width: 44, height: 40)
+                .background(Capsule().fill(ChartPalette.pillFill))
+                .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
+        }
+        .accessibilityLabel(L("Настройки графика", "Chart settings"))
+    }
+
+    private func setSelecting(_ on: Bool) {
+        isSelecting = on
+        dragStartDate = nil
+        panAnchor = nil
+    }
+
+    private func resetZoom() {
+        visibleSpan = nil
+        scrollStart = domain.lowerBound
+        spanAtPinchStart = nil
+        pinchAnchor = nil
+        pinchFraction = nil
+    }
+
+    /// Only what is currently *off the default*: a way back from a zoom, a
+    /// selection mode, a selected range. Nothing shows when nothing applies.
+    @ViewBuilder
+    private var stateChips: some View {
+        if isZoomed || isSelecting || hasRangeSelection {
+            FlowLayout(spacing: 8) {
+                if isZoomed { stateChip(L("Масштаб изменён · вернуть", "Zoomed · reset"), symbol: "arrow.uturn.backward", action: resetZoom) }
+                if isSelecting { stateChip(L("Выделение включено · выключить", "Selecting · turn off")) { setSelecting(false) } }
+                if hasRangeSelection { stateChip(L("Сбросить выделение", "Clear selection"), symbol: "xmark", action: clearRange) }
             }
         }
-        .padding(3)
-        .background(Capsule().fill(ChartPalette.pillFill))
-        .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
     }
 
-    private var navCluster: some View {
-        HStack(spacing: 2) {
-            navButton("chevron.left", label: L("Назад", "Back")) { pan(-1) }
-                .disabled(isSelecting || (span == .all && !isZoomed))
-            navButton("minus", label: L("Отдалить", "Zoom out")) { zoomBy(1.55) }
-                .disabled(!isZoomed || isSelecting)
-            navButton("plus", label: L("Приблизить", "Zoom in")) { zoomBy(0.65) }
-                .disabled(isSelecting)
-            navButton("chevron.right", label: L("Вперёд", "Forward")) { pan(1) }
-                .disabled(isSelecting || (span == .all && !isZoomed))
-        }
-        .padding(3)
-        .background(Capsule().fill(ChartPalette.pillFill))
-        .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
-        .opacity(isSelecting ? 0.45 : 1)
-    }
-
-    private var selectToggle: some View {
-        Button {
-            isSelecting.toggle()
-            dragStartDate = nil
-            panAnchor = nil
-        } label: {
-            Text(L("Выделить", "Select"))
-                .font(.lora(11.5, weight: isSelecting ? .semibold : .regular))
-                .foregroundStyle(isSelecting ? AppTheme.parchmentCard : AppTheme.ink)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(isSelecting ? AppTheme.forest : ChartPalette.pillFill))
-                .overlay(Capsule().stroke(isSelecting ? AppTheme.forest : ChartPalette.pillBorder, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("Режим выделения", "Selection mode"))
-        .accessibilityValue(isSelecting ? L("включён", "on") : L("выключен", "off"))
-    }
-
-    private var averagesToggle: some View {
-        Button {
-            showsDailyAverages.toggle()
-            selectedMark = nil
-        } label: {
-            Text(L("Среднее за день", "Daily average"))
-                .font(.lora(11.5, weight: showsDailyAverages ? .semibold : .regular))
-                .foregroundStyle(showsDailyAverages ? AppTheme.parchmentCard : AppTheme.ink)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(showsDailyAverages ? AppTheme.forest : ChartPalette.pillFill))
-                .overlay(Capsule().stroke(showsDailyAverages ? AppTheme.forest : ChartPalette.pillBorder, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("Среднее за день", "Daily average"))
-        .accessibilityValue(showsDailyAverages ? L("включено", "on") : L("выключено", "off"))
-    }
-
-    private func navButton(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
+    private func stateChip(_ title: String, symbol: String = "checkmark", action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.ink)
-                .frame(width: 26, height: 22)
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10, weight: .bold))
+                Text(title).font(.lora(11.5, weight: .medium))
+            }
+            .foregroundStyle(AppTheme.forestDeep)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(Capsule().fill(AppTheme.forest.opacity(0.12)))
+            .overlay(Capsule().stroke(AppTheme.forest.opacity(0.5), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 
-    // MARK: - Presets & chips
+    // MARK: - Layer groups
 
-    private var presetsRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if isCompact {
-                Text(L("пресеты", "presets"))
-                    .font(.loraItalic(10.5))
-                    .foregroundStyle(AppTheme.inkSoft)
-            }
-            HStack(alignment: .top, spacing: 8) {
-                if !isCompact {
-                    Text(L("пресеты", "presets"))
-                        .font(.loraItalic(10.5))
-                        .foregroundStyle(AppTheme.inkSoft)
-                        .frame(width: 56, alignment: .leading)
-                        .padding(.top, 5)
+    private func panelButton(_ panel: ControlPanel) -> some View {
+        let isOpen = openPanel == panel
+        let group = panel == .lines ? selection.lines : selection.marks
+        let title = panel == .lines ? L("Линии", "Lines") : L("Отметки", "Marks")
+        return Button {
+            openPanel = isOpen ? nil : panel
+        } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.lora(13, weight: .semibold)).foregroundStyle(AppTheme.ink)
+                // What is on, at a glance: each line's own shape and colour,
+                // each mark's own glyph.
+                HStack(spacing: 3) {
+                    if group.isEmpty {
+                        Text(L("выкл.", "off")).font(.lora(11)).foregroundStyle(AppTheme.inkSoft)
+                    } else {
+                        ForEach(group) { layer in
+                            Image(systemName: panel == .lines ? layer.shape.symbolName(filled: true) : layer.markSymbol)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(layer.color)
+                        }
+                    }
                 }
-                FlowLayout(spacing: 6) {
-                    ForEach(TimelinePreset.all) { preset in
-                        let selected = activePresetKey == preset.key
-                        Button { pickPreset(preset) } label: {
-                            Text(preset.title)
-                                .font(.lora(11.5, weight: selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? AppTheme.parchmentCard : AppTheme.ink)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 5)
-                                .background(Capsule().fill(selected ? AppTheme.forest : ChartPalette.pillFill))
-                                .overlay(Capsule().stroke(selected ? AppTheme.forest : ChartPalette.pillBorder, lineWidth: 1))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(AppTheme.inkSoft)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(Capsule().fill(isOpen ? ChartPalette.pillBorder.opacity(0.35) : ChartPalette.pillFill))
+            .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(group.isEmpty ? L("ничего не включено", "nothing on") : group.map(\.title).joined(separator: ", "))
+        .accessibilityHint(isOpen ? L("Свернуть", "Collapse") : L("Показать список", "Show the list"))
+    }
+
+    @ViewBuilder
+    private func panelContent(_ panel: ControlPanel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FlowLayout(spacing: 8) {
+                ForEach(panel == .lines ? TimelineLayer.lineLayers : TimelineLayer.markLayers) { layer in
+                    layerChip(layer)
+                }
+            }
+            if panel == .marks, isOn(.sleep), span != .day {
+                HStack(spacing: 8) {
+                    Text(L("Сон в неделе и месяце", "Sleep in a week or month"))
+                        .font(.lora(11.5)).foregroundStyle(AppTheme.inkSoft)
+                    ForEach(TimelineSleepStyle.allCases) { style in
+                        let selected = style == sleepStyle
+                        Button { sleepStyleRaw = style.rawValue; selectedMark = nil } label: {
+                            Text(style.title)
+                                .font(.lora(12, weight: selected ? .semibold : .regular))
+                                .foregroundStyle(selected ? TimelineLayer.sleep.textColor : AppTheme.inkSoft)
+                                .padding(.horizontal, 12).frame(minHeight: 36)
+                                .background(Capsule().fill(selected ? TimelineLayer.sleep.color.opacity(0.16) : Color.clear))
+                                .overlay(Capsule().stroke(selected ? TimelineLayer.sleep.color : ChartPalette.pillBorder, lineWidth: selected ? 1.5 : 1))
                         }
                         .buttonStyle(.plain)
-                    }
-                    if hasRangeSelection {
-                        Button(L("Сбросить выделение", "Clear selection"), action: clearRange)
-                            .font(.lora(11.5))
-                            .foregroundStyle(AppTheme.ink)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(ChartPalette.pillFill))
-                            .overlay(Capsule().stroke(ChartPalette.pillBorder, lineWidth: 1))
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
             }
         }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ChartPalette.scaleZone))
     }
 
-    private var chipsRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if isCompact {
-                Text(L("слои", "layers"))
-                    .font(.loraItalic(10.5))
-                    .foregroundStyle(AppTheme.inkSoft)
-            }
-            HStack(alignment: .top, spacing: 6) {
-                if !isCompact {
-                    Text(L("слои", "layers"))
-                        .font(.loraItalic(10.5))
-                        .foregroundStyle(AppTheme.inkSoft)
-                        .frame(width: 56, alignment: .leading)
-                        .padding(.top, 5)
-                }
-                FlowLayout(spacing: 6) {
-                    ForEach(TimelineLayer.allCases) { layer in
-                        let on = isOn(layer)
-                        Button { toggle(layer) } label: {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(on ? layer.color : AppTheme.border)
-                                    .frame(width: 7, height: 7)
-                                Text(layer.title)
-                                    .font(.lora(11.5, weight: on ? .semibold : .regular))
-                                    .foregroundStyle(on ? layer.textColor : AppTheme.inkSoft)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(on ? layer.color.opacity(0.15) : ChartPalette.pillFill.opacity(0.55)))
-                            .overlay(Capsule().stroke(on ? layer.color.opacity(0.5) : ChartPalette.pillBorder, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(layer.title)
-                        .accessibilityValue(on ? L("показан", "shown") : L("скрыт", "hidden"))
-                    }
+    /// A layer switch. On: its own colour, its own shape filled, a check and
+    /// a solid outline. Off: grey, the shape hollow, a dashed outline — so
+    /// state never depends on colour or brightness alone.
+    private func layerChip(_ layer: TimelineLayer) -> some View {
+        let on = isOn(layer)
+        return Button { toggle(layer) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: layer.group == .line ? layer.shape.symbolName(filled: on) : layer.markSymbol)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(on ? layer.color : AppTheme.inkSoft)
+                Text(layer.title)
+                    .font(.lora(12.5, weight: on ? .semibold : .regular))
+                    .foregroundStyle(on ? layer.textColor : AppTheme.inkSoft)
+                if on {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundStyle(layer.color)
                 }
             }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 40)
+            .background(Capsule().fill(on ? layer.color.opacity(0.16) : Color.clear))
+            .overlay(Capsule().stroke(
+                on ? layer.color : ChartPalette.pillBorder,
+                style: on ? StrokeStyle(lineWidth: 1.6) : StrokeStyle(lineWidth: 1, dash: [3, 3])
+            ))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(layer.title)
+        .accessibilityValue(on ? L("показан", "shown") : L("скрыт", "hidden"))
+        .accessibilityAddTraits(.isButton)
     }
 
     private var activityLegend: some View {
@@ -744,6 +802,9 @@ struct UnifiedTimeline: View {
                 }
             }
             .frame(height: layout(size: .zero).totalHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilitySummary)
+            .accessibilityAddTraits(.isImage)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(isSelecting ? AppTheme.forest.opacity(0.55) : Color.clear, lineWidth: 1.5)
@@ -757,12 +818,33 @@ struct UnifiedTimeline: View {
         }
     }
 
+    /// What the canvas shows, in words: the period, each line's average over
+    /// the window, and how many marks each event layer holds.
+    private var accessibilitySummary: String {
+        var parts = [L("Общий график, ", "Timeline, ") + periodCaption]
+        for layer in selection.lines {
+            let value = average(layer, in: win).map { String(format: "%.1f", $0) } ?? L("нет данных", "no data")
+            parts.append(L("\(layer.title): среднее \(value) из 5", "\(layer.title): average \(value) of 5"))
+        }
+        for layer in [TimelineLayer.emotion, .food, .impulse].filter(isOn) {
+            let n = eventPoints.filter { $0.layer == layer && $0.date >= win.lowerBound && $0.date <= win.upperBound }.count
+            parts.append("\(layer.title): \(n)")
+        }
+        return parts.joined(separator: ". ")
+    }
+
     private func handleTap(at point: CGPoint, layout: ChartLayout) {
         let clampedX = min(max(point.x, layout.x0), layout.x1)
         let time = layout.date(atX: clampedX)
-        cursor = time
-        selectedMark = hitTest(at: CGPoint(x: clampedX, y: point.y), layout: layout)
-        if selectedMark == nil, layout.ctxRect.insetBy(dx: -6, dy: -6).contains(point) {
+        selectedMarks = hitCandidates(at: CGPoint(x: clampedX, y: point.y), layout: layout)
+        // A tap on a plotted point reads that very record, not the moment
+        // under the finger.
+        if let hit = selectedMarks.first, hit.layer.isNumeric || hit.layer == .sleep, hit.value != nil {
+            cursor = hit.date
+        } else {
+            cursor = time
+        }
+        if selectedMarks.isEmpty, layout.ctxRect.insetBy(dx: -6, dy: -6).contains(point) {
             onEdit(.support(calendar.startOfDay(for: time)), time)
         }
     }
@@ -808,36 +890,30 @@ struct UnifiedTimeline: View {
         setSpan(base / TimeInterval(scale), anchoring: pinchAnchor, atFraction: pinchFraction)
     }
 
-    private func hitTest(at point: CGPoint, layout: ChartLayout) -> TimelineMark? {
+    /// Every mark under the fingertip, nearest first — several emotions at
+    /// one instant, a meal inside an activity, all stay reachable.
+    private func hitCandidates(at point: CGPoint, layout: ChartLayout) -> [TimelineMark] {
         if layout.scaleRect.insetBy(dx: -10, dy: -10).contains(point) {
-            var best: (TimelineMark, CGFloat)?
-            for mark in numericPoints {
-                let p = CGPoint(x: layout.x(mark.date), y: layout.y(mark.value ?? 0))
-                let d = hypot(p.x - point.x, p.y - point.y)
-                if d < 26, best == nil || d < best!.1 { best = (mark, d) }
-            }
-            return best?.0
+            return TimelineInspection.candidates(
+                numericPoints.map { ($0, CGPoint(x: layout.x($0.date), y: layout.y($0.value ?? 0))) },
+                at: point, radius: 26
+            )
         }
         if layout.sleepLine, layout.sleepRect.insetBy(dx: -10, dy: -10).contains(point) {
-            var best: (TimelineMark, CGFloat)?
-            for mark in snapshot.sleepDays {
-                let p = CGPoint(x: layout.x(mark.date), y: layout.sleepY(mark.value ?? 0))
-                let d = hypot(p.x - point.x, p.y - point.y)
-                if d < 26, best == nil || d < best!.1 { best = (mark, d) }
-            }
-            return best?.0
+            return TimelineInspection.candidates(
+                snapshot.sleepDays.map { ($0, CGPoint(x: layout.x($0.date), y: layout.sleepY($0.value ?? 0))) },
+                at: point, radius: 26
+            )
         }
         if layout.bandRect.insetBy(dx: -10, dy: -10).contains(point) {
-            var best: (TimelineMark, CGFloat)?
-            for (mark, p) in eventPositions(layout: layout) {
-                let d = hypot(p.x - point.x, p.y - point.y)
-                if d < 14, best == nil || d < best!.1 { best = (mark, d) }
-            }
-            if let hit = best?.0 { return hit }
-            let time = layout.date(atX: point.x)
-            return bandMarks.first { time >= $0.date && time <= ($0.end ?? $0.date) }
+            let events = TimelineInspection.candidates(
+                eventPositions(layout: layout).map { ($0.mark, $0.point) },
+                at: point, radius: 14
+            )
+            if !events.isEmpty { return events }
+            return TimelineInspection.bands(bandMarks, covering: layout.date(atX: point.x))
         }
-        return nil
+        return []
     }
 
     // MARK: - Drawing
@@ -918,9 +994,9 @@ struct UnifiedTimeline: View {
             }
             for mark in numericPoints {
                 let p = CGPoint(x: layout.x(mark.date), y: layout.y(mark.value ?? 0))
-                let circle = Path(ellipseIn: CGRect(x: p.x - 4.2, y: p.y - 4.2, width: 8.4, height: 8.4))
-                ctx.fill(circle, with: .color(mark.color))
-                ctx.stroke(circle, with: .color(AppTheme.parchmentCard), lineWidth: 1.6)
+                let shape = mark.layer.shape.path(center: p, radius: 4.6)
+                ctx.fill(shape, with: .color(mark.color))
+                ctx.stroke(shape, with: .color(AppTheme.parchmentCard), lineWidth: 1.6)
             }
             // Mood-face art in the gutter when mood is the only active scale.
             if activeScales == [.mood], !layout.compact {
@@ -961,12 +1037,17 @@ struct UnifiedTimeline: View {
         // X-axis ticks. The label's x is clamped so it never overhangs the
         // canvas edges (a centered label at the first/last tick otherwise
         // gets clipped by the drawing surface's own bounds).
+        var lastLabelX = -CGFloat.infinity
         for tick in ticks(layout: layout) {
             var line = Path()
             line.move(to: CGPoint(x: tick.x, y: layout.tickY))
             line.addLine(to: CGPoint(x: tick.x, y: layout.tickY + 5))
             context.stroke(line, with: .color(ChartPalette.pillBorder), lineWidth: 1)
             let labelX = min(max(tick.x, layout.x0 + 18), layout.x1 - 18)
+            // Clamping the first and last label keeps them on the canvas but
+            // can stack one on its neighbour; a label that would is left out.
+            guard labelX - lastLabelX >= 38 else { continue }
+            lastLabelX = labelX
             context.draw(
                 Text(tick.label).font(.lora(9.5)).foregroundStyle(AppTheme.inkSoft),
                 at: CGPoint(x: labelX, y: layout.tickY + 12), anchor: .top
@@ -997,9 +1078,11 @@ struct UnifiedTimeline: View {
             line.addLine(to: CGPoint(x: cx, y: layout.ctxBottom))
             context.stroke(line, with: .color(AppTheme.ink.opacity(0.45)), lineWidth: 1.1)
             for layer in TimelineLayer.numericLayers.filter(isOn) {
-                guard let value = valueAt(layer, cursor, snap: true) else { continue }
-                let p = CGPoint(x: cx, y: layout.y(value))
-                let dot = Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))
+                // A nearest-record reading is not on the line at this x.
+                guard let reading = reading(layer, at: cursor) else { continue }
+                if case .nearest = reading.source { continue }
+                let p = CGPoint(x: cx, y: layout.y(reading.value))
+                let dot = layer.shape.path(center: p, radius: 5.6)
                 context.fill(dot, with: .color(layer.color))
                 context.stroke(dot, with: .color(AppTheme.parchmentCard), lineWidth: 2)
             }
@@ -1137,44 +1220,76 @@ struct UnifiedTimeline: View {
                 .accessibilityLabel(L("Закрыть", "Close"))
             }
             ForEach(activeScales) { layer in
-                HStack(spacing: 6) {
-                    Circle().fill(layer.color).frame(width: 7, height: 7)
+                let reading = reading(layer, at: cursor)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: layer.shape.symbolName(filled: true))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(layer.color)
                     Text(layer.title)
-                        .font(.lora(11))
+                        .font(.lora(11.5))
                         .foregroundStyle(AppTheme.ink)
                     Spacer(minLength: 4)
-                    if let value = valueAt(layer, cursor, snap: true) {
-                        Text(String(format: "%.1f", value))
-                            .font(.lora(12, weight: .semibold))
-                            .foregroundStyle(layer.textColor)
+                    if let reading {
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(valueText(reading))
+                                .font(.lora(12.5, weight: .semibold))
+                                .foregroundStyle(layer.textColor)
+                            if let caption = sourceCaption(reading.source) {
+                                Text(caption).font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
+                            }
+                        }
                     } else {
-                        Text("—").font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+                        Text(L("нет данных", "no data")).font(.lora(11.5)).foregroundStyle(AppTheme.inkSoft)
                     }
                 }
+                .accessibilityElement(children: .combine)
             }
             if showsSleepLine {
                 let day = snapshot.sleepDays.first { calendar.isDate($0.date, inSameDayAs: cursor) }
                 HStack(spacing: 6) {
                     Circle().fill(TimelineLayer.sleep.color).frame(width: 7, height: 7)
                     Text(TimelineLayer.sleep.title)
-                        .font(.lora(11))
+                        .font(.lora(11.5))
                         .foregroundStyle(AppTheme.ink)
                     Spacer(minLength: 4)
                     if let hours = day?.value {
-                        Text(DurationFormatting.compact(hours * 3600))
-                            .font(.lora(12, weight: .semibold))
-                            .foregroundStyle(TimelineLayer.sleep.textColor)
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(DurationFormatting.compact(hours * 3600))
+                                .font(.lora(12.5, weight: .semibold))
+                                .foregroundStyle(TimelineLayer.sleep.textColor)
+                            Text(L("за день, ночь и дневной сон", "for the day, night and naps"))
+                                .font(.lora(10)).foregroundStyle(AppTheme.inkSoft)
+                        }
                     } else {
-                        Text("—").font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+                        Text(L("нет данных", "no data")).font(.lora(11.5)).foregroundStyle(AppTheme.inkSoft)
                     }
                 }
             }
-            if let mark {
+            if !selectedMarks.isEmpty {
                 Divider().overlay(ChartPalette.dashLine)
-                Text(combinedTitle(for: mark))
-                    .font(.lora(12.5, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(candidateRows, id: \.mark.id) { row in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(row.title)
+                            .font(.lora(12.5, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        if let target = row.mark.target {
+                            Button {
+                                onEdit(target, row.mark.date)
+                                dismissInspect()
+                            } label: {
+                                Text(target.isSession ? L("Открыть сессию", "Open session") : L("Открыть запись", "Open entry"))
+                                    .font(.lora(11.5, weight: .semibold))
+                                    .foregroundStyle(AppTheme.parchmentCard)
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 36)
+                                    .background(Capsule().fill(AppTheme.forest))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             } else if !notes.isEmpty {
                 Divider().overlay(ChartPalette.dashLine)
                 ForEach(notes, id: \.self) { note in
@@ -1183,21 +1298,6 @@ struct UnifiedTimeline: View {
                         .foregroundStyle(AppTheme.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            if let mark, mark.target != nil {
-                Button {
-                    if let target = mark.target { onEdit(target, mark.date) }
-                    dismissInspect()
-                } label: {
-                    Text(L("Открыть запись", "Open entry"))
-                        .font(.lora(11.5, weight: .semibold))
-                        .foregroundStyle(AppTheme.parchmentCard)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity)
-                        .background(Capsule().fill(AppTheme.forest))
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(10)
@@ -1214,6 +1314,35 @@ struct UnifiedTimeline: View {
         let siblings = marks.filter { $0.layer == .emotion && $0.target == target }
         guard siblings.count > 1 else { return mark.title }
         return siblings.map(\.title).joined(separator: " · ")
+    }
+
+    /// Marks under the finger, one row each; emotions of one entry are one row.
+    private var candidateRows: [(mark: TimelineMark, title: String)] {
+        var seen = Set<String>()
+        var rows: [(mark: TimelineMark, title: String)] = []
+        for mark in selectedMarks {
+            let key = mark.layer == .emotion && mark.target != nil ? "e-\(String(describing: mark.target))" : mark.id
+            guard seen.insert(key).inserted else { continue }
+            rows.append((mark, combinedTitle(for: mark)))
+        }
+        return rows
+    }
+
+    private func valueText(_ reading: TimelineValueReading) -> String {
+        let number = String(format: "%.1f", reading.value)
+        let text = (AppLanguage.current == .ru ? number.replacingOccurrences(of: ".", with: ",") : number) + " / 5"
+        if case .interpolated = reading.source { return "≈ " + text }
+        return text
+    }
+
+    private func sourceCaption(_ source: TimelineValueReading.Source) -> String? {
+        func at(_ date: Date) -> String { span == .day ? DateFormatting.time(date) : DateFormatting.compactDate(date) }
+        switch source {
+        case .recorded: return nil
+        case .interpolated(let from, let to): return L("между записями \(at(from))–\(at(to))", "between records \(at(from))–\(at(to))")
+        case .nearest(let date): return L("ближайшая запись · \(at(date))", "nearest record · \(at(date))")
+        case .dailyAverage: return L("среднее за день", "daily average")
+        }
     }
 
     private func tooltipNotes(for cursor: Date) -> [String] {
@@ -1266,11 +1395,11 @@ struct UnifiedTimeline: View {
         return pts.reduce(0.0) { $0 + ($1.value ?? 0) } / Double(pts.count)
     }
 
-    private var footerHint: String {
-        if isSelecting {
-            return L("Веди пальцем по графику — выделишь отрезок. Масштаб и прокрутка страницы выключены.", "Drag across the graph to select a range. Zoom and page scrolling are off.")
-        }
-        return L("Нажми на график — увидишь все слои в этой точке. Один палец двигает таймлайн, два пальца приближают. Страницу листай сверху вниз.", "Tap the graph to see every layer at that moment. One finger pans the timeline, two fingers zoom. Swipe up or down to scroll the page.")
+    /// Said only while it matters; the general how-to lives in the ⋯ menu.
+    private var footerHint: String? {
+        isSelecting
+            ? L("Веди пальцем по графику — выделишь отрезок. Масштаб и прокрутка страницы выключены.", "Drag across the graph to select a range. Zoom and page scrolling are off.")
+            : nil
     }
 
     @ViewBuilder
@@ -1314,10 +1443,12 @@ struct UnifiedTimeline: View {
                     Text(footSub).font(.lora(10.5)).foregroundStyle(AppTheme.inkSoft)
                 }
                 FlowLayout(spacing: 6) { footerPills(in: range) }
-                Text(footerHint)
-                    .font(.loraItalic(10))
-                    .foregroundStyle(AppTheme.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let footerHint {
+                    Text(footerHint)
+                        .font(.loraItalic(10))
+                        .foregroundStyle(AppTheme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -1329,11 +1460,13 @@ struct UnifiedTimeline: View {
                     FlowLayout(spacing: 6) { footerPills(in: range) }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(footerHint)
-                        .font(.loraItalic(10))
-                        .foregroundStyle(AppTheme.inkSoft)
-                        .frame(width: 160, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let footerHint {
+                        Text(footerHint)
+                            .font(.loraItalic(10))
+                            .foregroundStyle(AppTheme.inkSoft)
+                            .frame(width: 160, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

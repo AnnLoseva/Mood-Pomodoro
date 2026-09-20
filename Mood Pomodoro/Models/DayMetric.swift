@@ -26,14 +26,13 @@ enum DayMetric: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// Green, yellow, red — traffic-light hues, kept muted enough to sit in
-    /// the parchment palette but far enough apart to stay tellable apart
-    /// over the tinted activity bands behind them.
+    /// The series colour, shared with the diary chart and the analytics
+    /// (`AnalyticsPalette`) — the colour of the *series*, not of a mood level.
     var color: Color {
         switch self {
-        case .mood: return AppTheme.forest
-        case .energy: return Color(red: 0.882, green: 0.694, blue: 0.129)
-        case .motivation: return Color(red: 0.749, green: 0.239, blue: 0.204)
+        case .mood: return AnalyticsPalette.mood.color
+        case .energy: return AnalyticsPalette.energy.color
+        case .motivation: return AnalyticsPalette.motivation.color
         }
     }
 

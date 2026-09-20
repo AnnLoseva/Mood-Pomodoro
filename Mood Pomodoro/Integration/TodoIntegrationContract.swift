@@ -7,20 +7,10 @@ import Foundation
 
 /// Everything Mood Pomodoro knows about the ToDo List app ("CalmDay").
 ///
-/// **What is agreed and what is not.** The two apps are separate projects.
-/// What exists in ToDo List today, and is mirrored here exactly:
-///
-/// * it opens `moodpomodoro://focus?taskId=<UUID>&title=<text>&source=calmday`
-///   to start a focus session (`MoodPomodoroBridge`);
-/// * it accepts `calmday://complete?taskId=<UUID>`, which marks the task done
-///   and does nothing if it already is (`DeepLink`, `RootView.handle`).
-///
-/// ToDo List has since published its contract
-/// (`docs/MOOD_POMODORO_INTEGRATION.md`, shared file `MoodPomodoroContract.swift`,
-/// copied here byte for byte). Of it, only `createDoneTaskRequested` over the
-/// `calmday://integration` link is wired up. The session events and the
-/// App Group / CloudKit channels are not, so those stay behind `canDeliver`
-/// and nothing pretends to reach an app that cannot yet receive it.
+/// The two apps are separate projects; the agreed contract is `MoodPomodoroContract.swift`
+/// (shared file, copied byte for byte, see ToDo List's `docs/MOOD_POMODORO_INTEGRATION.md`).
+/// Events travel silently — shared App Group mailbox on this device, a dedicated private
+/// CloudKit container between devices — and only an explicit tap may open the other app.
 enum TodoIntegrationContract {
     /// Version of the event envelope this app writes to its outbox.
     static let schemaVersion = 1
@@ -42,13 +32,9 @@ enum TodoIntegrationContract {
 
     static let maxTitleLength = 200
 
-    /// Whether the other app can receive this kind of event *today*.
-    static func canDeliver(_ type: TodoIntegrationEventType) -> Bool {
-        switch type {
-        case .taskCompletionRequested, .createDoneTaskRequested: return true
-        case .sessionFinished, .sessionUpdated, .sessionDeleted: return false
-        }
-    }
+    /// Whether the contract has a place for this kind of event. Whether a channel is *available
+    /// right now* is the transport's business (`TodoIntegrationTransport.canDeliver`).
+    static func canDeliver(_ type: TodoIntegrationEventType) -> Bool { true }
 }
 
 // MARK: - Incoming: start a session for a task
@@ -119,12 +105,20 @@ enum TodoIntegrationEventType: String, Codable, Sendable {
     case sessionDeleted
 }
 
+/// Where an event is in its life. Kept apart on purpose: "written to a channel" is not
+/// "ToDo List applied it".
+///
+///     queued     saved here, not yet in any channel
+///     delivered  in the shared mailbox / iCloud — left this app, no receipt yet
+///     handedOff  ToDo List was opened with it (explicit taps only); no receipt exists on this path
+///     rejected   ToDo List understood but refused it — kept, never retried
+///
+/// A receipt of "applied / duplicate / stale / …" ends the event's life and removes it.
 enum TodoIntegrationDelivery: String, Codable, Sendable {
-    /// Saved, not yet given to the other app.
     case queued
-    /// Given to the other app (its link was opened). There is no
-    /// acknowledgement channel, so this is as far as the state can honestly go.
+    case delivered
     case handedOff
+    case rejected
 }
 
 /// One thing to tell ToDo List, carrying only the minimum: ids, a title, and
@@ -151,6 +145,8 @@ struct TodoIntegrationEvent: Codable, Equatable, Identifiable, Sendable {
     var delivery: TodoIntegrationDelivery = .queued
     var attempts: Int = 0
     var lastAttemptAt: Date?
+    /// The receipt status when ToDo List refused it (`rejected`, `unsupported`).
+    var rejectionReason: String?
 
     /// Events about one session replace one another; a completion request
     /// and a create-done request are their own operations.

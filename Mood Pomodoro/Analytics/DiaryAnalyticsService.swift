@@ -594,8 +594,10 @@ extension AnalyticsService {
             if !activity.isEmpty {
                 title = event.kind == .start ? activity : L("\(activity) — завершение", "\(activity) — end")
             }
+            // Every session opens its own details (a manual one offers the
+            // time editor from there), not only the backdated ones.
+            target = .session(session.id)
             if session.isManualEntry {
-                target = .session(session.id)
                 if event.kind == .start {
                     let range = DateFormatting.timeRange(from: session.startDate, to: session.endDate)
                     subtitle = [range, session.note].compactMap { $0 }.joined(separator: " · ")

@@ -3,11 +3,12 @@ import Foundation
 /// Shared analytics window. Start is inclusive, end is exclusive, and the
 /// next day is always `Calendar.date(byAdding: .day)`, never +24h.
 enum AnalyticsPeriodKind: String, CaseIterable, Identifiable, Sendable {
-    case days7, days30, days90, year, all, custom
+    case today, days7, days30, days90, year, all, custom
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .today: return L("Сегодня", "Today")
         case .days7: return L("7 дней", "7 days")
         case .days30: return L("30 дней", "30 days")
         case .days90: return L("90 дней", "90 days")
@@ -23,12 +24,14 @@ struct AnalyticsPeriod: Equatable, Sendable {
     var customStart: Date?
     var customEnd: Date?
 
-    static let `default` = AnalyticsPeriod(kind: .days30)
+    static let `default` = AnalyticsPeriod(kind: .days7)
 
     func interval(now: Date = .now, calendar: Calendar = .current, earliest: Date? = nil) -> DateInterval {
         let today = calendar.startOfDay(for: now)
         let endExclusive = calendar.date(byAdding: .day, value: 1, to: today) ?? today
         switch kind {
+        case .today:
+            return DateInterval(start: today, end: endExclusive)
         case .days7:
             let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
             return DateInterval(start: start, end: endExclusive)

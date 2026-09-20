@@ -85,6 +85,28 @@ final class TodoIntegrationOutbox {
         update(id) { $0.delivery = .handedOff; $0.lastAttemptAt = date }
     }
 
+    /// In a silent channel (mailbox / iCloud). Not the same as acknowledged.
+    func markDelivered(_ id: String, at date: Date = .now) {
+        update(id) { $0.delivery = .delivered; $0.lastAttemptAt = date }
+    }
+
+    /// ToDo List understood the event and refused it; retrying the same thing cannot help.
+    func markRejected(_ id: String, reason: String) {
+        update(id) { $0.delivery = .rejected; $0.rejectionReason = reason }
+    }
+
+    /// Events that left this app but that ToDo List has not answered yet.
+    func awaitingReceipt() -> [TodoIntegrationEvent] {
+        events.filter { $0.delivery == .delivered || $0.delivery == .handedOff }
+    }
+
+    /// Answered events are forgotten after a month; nothing lives here forever.
+    func pruneSettled(olderThan cutoff: Date) {
+        let before = events.count
+        events.removeAll { ($0.delivery == .delivered || $0.delivery == .rejected) && $0.createdAt < cutoff }
+        if events.count != before { persist() }
+    }
+
     /// The other app confirmed it processed the event; nothing left to keep.
     func acknowledge(_ id: String) {
         events.removeAll { $0.id == id }

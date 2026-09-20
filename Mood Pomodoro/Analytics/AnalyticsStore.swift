@@ -9,6 +9,9 @@ final class AnalyticsStore {
     }
     var snapshot: AnalyticsSnapshot = .empty
     var isRefreshing = false
+    /// False until the first `ingest`, so a screen can tell "not loaded yet"
+    /// from "nothing recorded".
+    private(set) var hasIngested = false
     var errorMessage: String?
     var facts = AnalyticsFacts(
         checkIns: [], sessions: [], conditionEvents: [], hunger: [], food: [], emotions: [], impulses: [],
@@ -35,6 +38,7 @@ final class AnalyticsStore {
     func ingest(_ facts: AnalyticsFacts, calendar: Calendar = .current) {
         self.facts = facts
         self.calendar = calendar
+        hasIngested = true
         scheduleRebuild()
     }
 

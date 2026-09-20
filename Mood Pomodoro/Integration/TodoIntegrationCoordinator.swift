@@ -17,9 +17,11 @@ struct TodoSessionPrompt: Identifiable, Equatable {
 
     enum Progress: Equatable {
         case none
-        /// Saved but not given to the other app yet.
+        /// Saved but not given to any channel yet.
         case queued
-        /// Given to the other app. Nothing more is claimed than that.
+        /// In the shared mailbox / iCloud. Nothing more is claimed: ToDo List applies it when it next runs.
+        case delivered
+        /// ToDo List was opened with it. Nothing more is claimed than that.
         case handedOff
     }
 
@@ -53,6 +55,8 @@ final class TodoIntegrationCoordinator {
     @ObservationIgnored private let transport: TodoIntegrationTransport
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private var isFlushing = false
+    @ObservationIgnored private var flushAgain = false
 
     private static let consumedKey = "todo.integration.consumedRequestIDs"
     private static let consumedLimit = 50
@@ -67,7 +71,7 @@ final class TodoIntegrationCoordinator {
         now: @escaping () -> Date = { .now }
     ) {
         self.outbox = outbox ?? TodoIntegrationOutbox()
-        self.transport = transport ?? URLSchemeTodoTransport()
+        self.transport = transport ?? TodoIntegrationRouter()
         self.defaults = defaults
         self.now = now
     }
@@ -138,6 +142,9 @@ final class TodoIntegrationCoordinator {
             outbox.enqueue(.sessionDeleted(sessionID: sessionID, taskID: taskID, at: now()))
             if prompt?.sessionID == sessionID { prompt = nil }
         }
+        // Whatever was just saved leaves at once when a silent channel exists — the second
+        // app never has to be opened for the time to arrive.
+        Task { await flushQueuedSilently() }
     }
 
     private func sessionDidFinish(_ session: FocusSession) {
@@ -191,7 +198,7 @@ final class TodoIntegrationCoordinator {
 
     private func deliver(_ event: TodoIntegrationEvent) async {
         guard event.delivery == .queued else {
-            setProgress(.handedOff)
+            setProgress(event.delivery == .delivered ? .delivered : .handedOff)
             return
         }
         guard transport.canDeliver(event.type) else {
@@ -199,7 +206,11 @@ final class TodoIntegrationCoordinator {
             return
         }
         outbox.markAttempted(event.id, at: now())
-        switch await transport.deliver(event) {
+        // A tap on an explicit action: this is the one case where ToDo List may be opened.
+        switch await transport.deliver(event, userInitiated: true) {
+        case .delivered:
+            outbox.markDelivered(event.id, at: now())
+            setProgress(.delivered)
         case .handedOff:
             outbox.markHandedOff(event.id, at: now())
             setProgress(.handedOff)
@@ -218,19 +229,52 @@ final class TodoIntegrationCoordinator {
 
     // MARK: - Lifecycle
 
-    /// On becoming active: drop a stale finish sheet, and give a channel that
-    /// works without switching apps whatever is waiting. With none today, the
-    /// second half does nothing — nothing is ever opened behind the user's back.
+    /// On becoming active: drop a stale card, send what is waiting through channels that need
+    /// no app switch, and read the receipts ToDo List left. Nothing is ever opened behind the
+    /// user's back, and with no channel and no ToDo List this does nothing at all.
     func applicationDidBecomeActive() async {
         if let current = prompt, current.progress == .none,
            now().timeIntervalSince(current.createdAt) > Self.promptLifetime {
             prompt = nil
         }
+        await flushQueuedSilently()
+        collectReceipts()
+        outbox.pruneSettled(olderThan: now().addingTimeInterval(-MoodPomodoroContract.maxEventAge))
+    }
+
+    /// Sends every queued event through the silent channels. Safe to call as often as needed:
+    /// an event already in a channel is not queued any more, and a re-send is a duplicate to the receiver.
+    func flushQueuedSilently() async {
         guard transport.deliversSilently else { return }
-        for event in outbox.queued(where: transport.canDeliver) {
-            outbox.markAttempted(event.id, at: now())
-            if await transport.deliver(event) == .handedOff {
-                outbox.markHandedOff(event.id, at: now())
+        if isFlushing {
+            flushAgain = true   // something was queued while a pass was running
+            return
+        }
+        isFlushing = true
+        defer { isFlushing = false }
+        repeat {
+            flushAgain = false
+            for event in outbox.queued(where: transport.canDeliver) {
+                outbox.markAttempted(event.id, at: now())
+                if await transport.deliver(event, userInitiated: false) == .delivered {
+                    outbox.markDelivered(event.id, at: now())
+                }
+            }
+        } while flushAgain
+    }
+
+    /// Applies what ToDo List answered. `applied`, `duplicate`, `stale`, `taskNotFound` and
+    /// `expired` all mean "nothing more to do"; `rejected` and `unsupported` mean it will never
+    /// work as sent, so the event is kept aside instead of being retried forever.
+    func collectReceipts() {
+        let waiting = outbox.awaitingReceipt()
+        guard !waiting.isEmpty else { return }
+        for (id, status) in transport.receipts(for: waiting) {
+            switch status {
+            case .applied, .duplicate, .stale, .taskNotFound, .expired:
+                outbox.acknowledge(id)
+            case .rejected, .unsupported:
+                outbox.markRejected(id, reason: status.rawValue)
             }
         }
     }

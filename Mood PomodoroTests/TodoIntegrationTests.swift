@@ -39,11 +39,19 @@ struct TodoIntegrationTests {
         var supported: Set<TodoIntegrationEventType> = [.taskCompletionRequested]
         var result: TodoDeliveryResult = .handedOff
         private(set) var delivered: [TodoIntegrationEvent] = []
+        /// For each delivery: was it a tap (`true`) or a background flush (`false`)?
+        private(set) var userInitiated: [Bool] = []
+        var receiptStatuses: [String: IntegrationAckStatus] = [:]
 
         func canDeliver(_ type: TodoIntegrationEventType) -> Bool { supported.contains(type) }
-        func deliver(_ event: TodoIntegrationEvent) async -> TodoDeliveryResult {
+        func deliver(_ event: TodoIntegrationEvent, userInitiated: Bool) async -> TodoDeliveryResult {
             delivered.append(event)
+            self.userInitiated.append(userInitiated)
             return result
+        }
+        func receipts(for events: [TodoIntegrationEvent]) -> [String: IntegrationAckStatus] {
+            let ids = Set(events.map(\.id))
+            return receiptStatuses.filter { ids.contains($0.key) }
         }
     }
 
@@ -430,6 +438,7 @@ struct TodoIntegrationTests {
 
         let transport = StandInTransport()
         transport.deliversSilently = true
+        transport.result = .delivered
         let integration = TodoIntegrationCoordinator(
             outbox: TodoIntegrationOutbox(fileURL: file),
             transport: transport,

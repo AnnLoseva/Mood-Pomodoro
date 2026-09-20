@@ -23,19 +23,22 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
         case .emotion: return L("Эмоции", "Emotions")
         case .food: return L("Еда", "Food")
         case .impulse: return L("Импульсы", "Impulses")
-        case .context: return L("Таблетки и цикл", "Medication and cycle")
+        case .context: return L("Дневной контекст", "Day context")
         }
     }
 
+    /// The series colour, shared with the analytics charts
+    /// (`AnalyticsPalette`). Marks that carry their own meaning (emotion,
+    /// food, impulse) keep their colours.
     var color: Color {
         switch self {
-        case .mood: return DayScaleMetric.mood.color
-        case .energy: return DayScaleMetric.energy.color
-        case .motivation: return DayScaleMetric.motivation.color
-        case .hunger: return DayScaleMetric.hunger.color
-        case .appetite: return DayScaleMetric.appetite.color
-        case .sleep: return Color(red: 0.32, green: 0.40, blue: 0.55)
-        case .activity: return AppTheme.forest
+        case .mood: return AnalyticsPalette.mood.color
+        case .energy: return AnalyticsPalette.energy.color
+        case .motivation: return AnalyticsPalette.motivation.color
+        case .hunger: return AnalyticsPalette.hunger.color
+        case .appetite: return AnalyticsPalette.appetite.color
+        case .sleep: return AnalyticsPalette.sleep.color
+        case .activity: return AnalyticsPalette.activity.color
         case .emotion: return Color(red: 0.494, green: 0.376, blue: 0.604)
         case .food: return AppTheme.moss
         case .impulse: return AppTheme.rust
@@ -43,19 +46,52 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
         }
     }
 
+    /// The same hue, dark enough for text.
     var textColor: Color {
         switch self {
-        case .mood: return AppTheme.forestDeep
-        case .energy: return Color(red: 0.541, green: 0.416, blue: 0.031)
-        case .motivation: return Color(red: 0.588, green: 0.161, blue: 0.122)
-        case .hunger: return Color(red: 0.173, green: 0.396, blue: 0.380)
-        case .appetite: return Color(red: 0.588, green: 0.282, blue: 0.165)
-        case .sleep: return Color(red: 0.235, green: 0.298, blue: 0.431)
-        case .activity: return AppTheme.forestDeep
+        case .mood: return AnalyticsPalette.text(AnalyticsPalette.mood).color
+        case .energy: return AnalyticsPalette.text(AnalyticsPalette.energy).color
+        case .motivation: return AnalyticsPalette.text(AnalyticsPalette.motivation).color
+        case .hunger: return AnalyticsPalette.text(AnalyticsPalette.hunger).color
+        case .appetite: return AnalyticsPalette.text(AnalyticsPalette.appetite).color
+        case .sleep: return AnalyticsPalette.text(AnalyticsPalette.sleep).color
+        case .activity: return AnalyticsPalette.text(AnalyticsPalette.activity).color
         case .emotion: return Color(red: 0.373, green: 0.275, blue: 0.463)
         case .food: return Color(red: 0.353, green: 0.404, blue: 0.251)
         case .impulse: return AppTheme.rustDeep
         case .context: return Color(red: 0.420, green: 0.345, blue: 0.251)
+        }
+    }
+
+    /// Lines vs. marks and intervals — the two groups the chart's controls
+    /// keep apart. Sleep lives with the marks even where a week or month
+    /// draws it as a line of hours.
+    enum Group: Sendable { case line, mark }
+
+    var group: Group { isNumeric ? .line : .mark }
+
+    /// How a line's points are drawn, so two lines never differ by colour alone.
+    var shape: SeriesShape {
+        switch self {
+        case .mood: return .circle
+        case .energy: return .square
+        case .motivation: return .triangle
+        case .hunger: return .diamond
+        case .appetite: return .plus
+        default: return .circle
+        }
+    }
+
+    /// Glyph for a mark or interval chip.
+    var markSymbol: String {
+        switch self {
+        case .sleep: return "moon.zzz.fill"
+        case .activity: return "leaf.fill"
+        case .emotion: return "sparkles"
+        case .food: return "fork.knife"
+        case .impulse: return "bolt.fill"
+        case .context: return "pills.fill"
+        default: return "circle.fill"
         }
     }
 
@@ -79,7 +115,9 @@ enum TimelineLayer: String, CaseIterable, Identifiable, Sendable, Hashable {
     }
 
     static let numericLayers: [TimelineLayer] = [.mood, .energy, .motivation, .hunger, .appetite]
-    static let defaultOn: Set<String> = ["mood", "sleep", "food"]
+    static let lineLayers: [TimelineLayer] = numericLayers
+    static let markLayers: [TimelineLayer] = [.sleep, .activity, .emotion, .food, .impulse, .context]
+    static let defaultOn: Set<String> = Set(TimelineLayerSelection.defaultRaw.split(separator: ",").map(String.init))
 }
 
 enum TimelineSpan: String, CaseIterable, Identifiable, Sendable {

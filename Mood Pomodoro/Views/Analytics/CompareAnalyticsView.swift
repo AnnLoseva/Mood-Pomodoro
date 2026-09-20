@@ -1,21 +1,79 @@
 import SwiftUI
 
+/// Сравнение: two metrics on one time axis — sharing a scale only when they
+/// are the same kind of number — and, on request, the days grouped by a
+/// context ("sleep under 6 h", "period days") with the outcome's average in
+/// each. Co-occurrence only; nothing here says one thing caused another.
 struct CompareAnalyticsView: View {
-    let snapshot: AnalyticsSnapshot
-    @State private var outcome = "mood"
+    @Bindable var store: AnalyticsStore
+    @AppStorage("analytics.compare.a") private var aRaw = AnalyticsMetric.mood.rawValue
+    @AppStorage("analytics.compare.b") private var bRaw = AnalyticsMetric.energy.rawValue
     @State private var context = "sleepDuration"
     @State private var factorCategory: UUID?
 
-    private let outcomes: [(key: String, title: String)] = [
-        ("mood", L("Настроение", "Mood")),
-        ("energy", L("Энергия", "Energy")),
-        ("motivation", L("Мотивация", "Motivation")),
-        ("appetite", L("Аппетит", "Appetite")),
-        ("hunger", L("Голод", "Hunger")),
-        ("rest", L("Длительность отдыха", "Rest duration")),
-        ("work", L("Длительность работы", "Work duration")),
-        ("study", L("Длительность учёбы", "Study duration"))
-    ]
+    private var a: AnalyticsMetric { AnalyticsMetric(rawValue: aRaw) ?? .mood }
+    private var b: AnalyticsMetric {
+        let candidate = AnalyticsMetric(rawValue: bRaw) ?? .energy
+        return candidate == a ? (a == .energy ? .mood : .energy) : candidate
+    }
+
+    var body: some View {
+        let snapshot = store.snapshot
+        let seriesA = AnalyticsChartSeries.make(metric: a, days: snapshot.days)
+        let seriesB = AnalyticsChartSeries.make(metric: b, days: snapshot.days)
+        let both = snapshot.days.filter { a.value(in: $0) != nil && b.value(in: $0) != nil }.count
+
+        AnalyticsDetailScaffold(title: AnalyticsSection.compare.title, store: store) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    AnalyticsMetricMenu(title: L("Первый показатель", "First metric"), selection: Binding(get: { a }, set: { aRaw = $0.rawValue }), excluding: b)
+                    Text(L("и", "vs")).font(.lora(13)).foregroundStyle(AppTheme.inkSoft)
+                    AnalyticsMetricMenu(title: L("Второй показатель", "Second metric"), selection: Binding(get: { b }, set: { bRaw = $0.rawValue }), excluding: a)
+                }
+                AnalyticsMetricChart(series: [seriesA, seriesB], interval: snapshot.interval, height: 200)
+                if AnalyticsChartLayout.layout(for: [a, b]) == .stacked {
+                    Text(L("Разные единицы — поэтому два графика на общей оси времени, а не одна шкала.", "Different units — so two charts on a shared time axis, not one scale."))
+                        .font(.lora(11)).foregroundStyle(AppTheme.inkSoft)
+                }
+                if both == 0 {
+                    AnalyticsQuietNote(text: L("Нет дней, где записаны оба показателя.", "No days with both metrics recorded."))
+                } else {
+                    AnalyticsReliabilityBadge(
+                        confidence: AnalyticsConfidence(independentCount: both),
+                        extra: L("\(both) дн. с обоими показателями", "\(both) days with both")
+                    )
+                }
+            }
+            .padding(16)
+            .parchmentCard(padding: 0)
+
+            AnalyticsDisclosure(L("По условиям дней", "By day conditions")) { contextSection(snapshot) }
+        }
+    }
+
+    // MARK: - Groups
+
+    private var outcomeKey: String {
+        switch a {
+        case .energy: return "energy"
+        case .motivation: return "motivation"
+        case .appetite: return "appetite"
+        case .satiety: return "hunger"
+        case .sleep: return "sleep"
+        case .rest: return "rest"
+        case .work: return "work"
+        case .study: return "study"
+        default: return "mood"
+        }
+    }
+
+    private var outcomeTitle: String {
+        switch outcomeKey {
+        case "hunger": return L("Голод (1–5)", "Hunger (1–5)")
+        case "mood" where a != .mood: return AnalyticsMetric.mood.title
+        default: return a.title
+        }
+    }
 
     private var contexts: [(key: String, title: String)] {
         var items: [(key: String, title: String)] = [
@@ -26,87 +84,82 @@ struct CompareAnalyticsView: View {
             ("cycle", L("Этап цикла", "Cycle stage")),
             ("emotion", L("Эмоции", "Emotions")),
             ("impulse", L("Импульсивность", "Impulsivity")),
-            ("sessionType", L("Тип сеанса", "Session type")),
+            ("sessionType", L("Тип сессии", "Session type")),
             ("food", L("Питание", "Food"))
         ]
-        if snapshot.factors.contains(where: { !$0.categoryName.isEmpty }) {
-            items.append(("factor", L("Пользовательское состояние", "Custom condition")))
+        if store.snapshot.factors.contains(where: { !$0.categoryName.isEmpty }) {
+            items.append(("factor", L("Пользовательское условие", "Custom condition")))
         }
         return items
     }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                picker(L("Результат", "Outcome"), options: outcomes, selection: $outcome)
-                picker(L("Контекст", "Context"), options: contexts, selection: $context)
-                if context == "factor" {
-                    factorCategoryPicker
-                }
-
-                let groups = AnalyticsEngine.compare(days: snapshot.days, outcome: outcome, groups: groupSpecs)
-                if groups.allSatisfy({ $0.dayCount == 0 }) {
-                    AnalyticsEmptyCard(
-                        title: L("Недостаточно записей для сравнения", "Not enough records to compare"),
-                        message: L("Нужны дни с выбранным результатом и контекстом в этом периоде.", "Need days that have both the chosen outcome and context in this period.")
-                    )
-                } else {
-                    ForEach(groups) { group in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(group.label).font(.lora(15, weight: .semibold)).foregroundStyle(AppTheme.ink)
-                            Text(L(
-                                "\(group.dayCount) дн. · \(group.observationCount) наблюдений · среднее \(format(group.average))",
-                                "\(group.dayCount) days · \(group.observationCount) observations · average \(format(group.average))"
-                            ))
-                            .font(.lora(12))
-                            .foregroundStyle(AppTheme.inkSoft)
-                            AnalyticsReliabilityBadge(confidence: group.confidence)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .parchmentCard(padding: 0)
-                    }
-                    let usable = groups.filter { $0.confidence != .insufficient && $0.average != nil }
-                    if usable.count >= 2, let first = usable.first, let second = usable.dropFirst().first, let a = first.average, let b = second.average {
-                        Text(L(
-                            "В дни с «\(first.label)» среднее было \(String(format: "%+.1f", a - b)) относительно «\(second.label)». Связь может зависеть от других факторов.",
-                            "On days with “\(first.label)” the average was \(String(format: "%+.1f", a - b)) versus “\(second.label)”. The link may depend on other factors."
-                        ))
-                        .font(.lora(13))
-                        .foregroundStyle(AppTheme.ink)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
-        }
-    }
-
-    private var factorCategoryPicker: some View {
-        let categories = Dictionary(grouping: snapshot.factors, by: \.categoryID)
-        return ScrollView(.horizontal, showsIndicators: false) {
+    private func contextSection(_ snapshot: AnalyticsSnapshot) -> some View {
+        let groups = AnalyticsEngine.compare(days: snapshot.days, outcome: outcomeKey, groups: groupSpecs(snapshot))
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                ForEach(categories.keys.sorted { a, b in
-                    (categories[a]?.first?.categoryName ?? "") < (categories[b]?.first?.categoryName ?? "")
-                }, id: \.self) { id in
-                    let on = factorCategory == id
-                    Button { factorCategory = id } label: {
-                        Text(Ldata(categories[id]?.first?.categoryName ?? ""))
-                            .font(.lora(12, weight: on ? .semibold : .regular))
-                            .foregroundStyle(on ? AppTheme.parchmentCard : AppTheme.ink)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(on ? AppTheme.forest : AppTheme.chipFill))
+                Text(L("Показатель: ", "Metric: ") + outcomeTitle).font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+                Spacer(minLength: 8)
+                Menu {
+                    ForEach(contexts, id: \.key) { item in
+                        Button { context = item.key } label: {
+                            if item.key == context { Label(item.title, systemImage: "checkmark") } else { Text(item.title) }
+                        }
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(contexts.first { $0.key == context }?.title ?? "").font(.lora(13, weight: .medium))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(AppTheme.ink)
+                    .padding(.horizontal, 12).frame(minHeight: 44)
+                    .background(Capsule().fill(AppTheme.chipFill))
+                    .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1))
+                }
+                .accessibilityLabel(L("Контекст", "Context"))
+            }
+            if context == "factor" { factorCategoryMenu(snapshot) }
+            if groups.allSatisfy({ $0.dayCount == 0 }) {
+                AnalyticsQuietNote(text: L("Нет дней с выбранным контекстом в этом периоде.", "No days with this context in the period."))
+            } else {
+                ForEach(groups) { group in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(group.label).font(.lora(14, weight: .medium)).foregroundStyle(AppTheme.ink)
+                            Spacer(minLength: 8)
+                            Text(format(group.average)).font(.lora(14, weight: .semibold)).foregroundStyle(AppTheme.ink)
+                        }
+                        Text(L("\(group.dayCount) дн. · \(group.observationCount) наблюдений", "\(group.dayCount) days · \(group.observationCount) observations"))
+                            .font(.lora(12)).foregroundStyle(AppTheme.inkSoft)
+                        AnalyticsReliabilityBadge(confidence: group.confidence)
+                    }
+                }
+                let usable = groups.filter { $0.confidence != .insufficient && $0.average != nil }
+                if usable.count >= 2, let first = usable.first, let second = usable.dropFirst().first, let x = first.average, let y = second.average {
+                    Text(L("В дни «\(first.label)» среднее было \(diff(x - y)) относительно «\(second.label)». Связь может зависеть от других факторов.",
+                           "On “\(first.label)” days the average was \(diff(x - y)) versus “\(second.label)”. The link may depend on other factors."))
+                        .font(.lora(12)).foregroundStyle(AppTheme.ink)
                 }
             }
         }
-        .padding(14)
-        .parchmentCard()
     }
 
-    private var groupSpecs: [(id: String, label: String, include: (AnalyticsDayRow) -> Bool)] {
+    private func factorCategoryMenu(_ snapshot: AnalyticsSnapshot) -> some View {
+        let categories = Dictionary(grouping: snapshot.factors, by: \.categoryID)
+        let ids = categories.keys.sorted { (categories[$0]?.first?.categoryName ?? "") < (categories[$1]?.first?.categoryName ?? "") }
+        return Menu {
+            ForEach(ids, id: \.self) { id in
+                Button(Ldata(categories[id]?.first?.categoryName ?? "")) { factorCategory = id }
+            }
+        } label: {
+            Text(Ldata(categories[factorCategory ?? ids.first ?? UUID()]?.first?.categoryName ?? L("категория", "category")))
+                .font(.lora(13, weight: .medium)).foregroundStyle(AppTheme.ink)
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background(Capsule().fill(AppTheme.chipFill))
+                .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1))
+        }
+    }
+
+    private func groupSpecs(_ snapshot: AnalyticsSnapshot) -> [(id: String, label: String, include: (AnalyticsDayRow) -> Bool)] {
         switch context {
         case "sleepDuration":
             return [
@@ -136,7 +189,7 @@ struct CompareAnalyticsView: View {
         case "food":
             return [
                 ("food", L("Дни с едой", "Days with food"), { $0.hasFood }),
-                ("none", L("Дни без еды", "Days without food"), { !$0.hasFood })
+                ("none", L("Дни без записей еды", "Days without food records"), { !$0.hasFood })
             ]
         case "impulse":
             return [
@@ -156,8 +209,7 @@ struct CompareAnalyticsView: View {
             }
         case "factor":
             let category = factorCategory ?? snapshot.factors.first?.categoryID
-            let options = snapshot.factors.filter { $0.categoryID == category }
-            return options.map { option in
+            return snapshot.factors.filter { $0.categoryID == category }.map { option in
                 (option.id, Ldata(option.optionName), { $0.factorKeys.contains(option.id) })
             }
         default:
@@ -169,34 +221,13 @@ struct CompareAnalyticsView: View {
     }
 
     private func format(_ value: Double?) -> String {
-        let durationKeys: Set<String> = ["rest", "work", "study"]
-        if durationKeys.contains(outcome) {
-            return analyticsDuration(value.map { $0 * 3600 })
-        }
-        return analyticsFormat(value)
+        ["rest", "work", "study", "sleep"].contains(outcomeKey) ? analyticsDuration(value.map { $0 * 3600 }) : analyticsFormat(value)
     }
 
-    private func picker(_ title: String, options: [(key: String, title: String)], selection: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.lora(13, weight: .medium)).foregroundStyle(AppTheme.inkSoft)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(options, id: \.key) { item in
-                        let on = selection.wrappedValue == item.key
-                        Button { selection.wrappedValue = item.key } label: {
-                            Text(item.title)
-                                .font(.lora(12, weight: on ? .semibold : .regular))
-                                .foregroundStyle(on ? AppTheme.parchmentCard : AppTheme.ink)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Capsule().fill(on ? AppTheme.forest : AppTheme.chipFill))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+    private func diff(_ value: Double) -> String {
+        if ["rest", "work", "study", "sleep"].contains(outcomeKey) {
+            return (value >= 0 ? "+" : "−") + DurationFormatting.compact(abs(value) * 3600)
         }
-        .padding(14)
-        .parchmentCard()
+        return String(format: "%+.1f", value)
     }
 }

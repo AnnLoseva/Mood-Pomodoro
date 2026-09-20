@@ -127,16 +127,14 @@ enum DayScaleMetric: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Colours for the unified chart. Mood/energy/motivation match the day
-    /// chart; hunger and appetite sit apart from those three and from each
-    /// other, so five lines on one 1–5 axis stay tellable apart.
+    /// The series colour, shared with every other chart (`AnalyticsPalette`).
     var color: Color {
         switch self {
-        case .mood: return DayMetric.mood.color
-        case .energy: return DayMetric.energy.color
-        case .motivation: return DayMetric.motivation.color
-        case .hunger: return Color(red: 0.243, green: 0.537, blue: 0.518)
-        case .appetite: return Color(red: 0.769, green: 0.412, blue: 0.275)
+        case .mood: return AnalyticsPalette.mood.color
+        case .energy: return AnalyticsPalette.energy.color
+        case .motivation: return AnalyticsPalette.motivation.color
+        case .hunger: return AnalyticsPalette.hunger.color
+        case .appetite: return AnalyticsPalette.appetite.color
         }
     }
 }
